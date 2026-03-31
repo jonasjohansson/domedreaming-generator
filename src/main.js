@@ -6,21 +6,25 @@ import { unwrapMesh } from './unwrap.js';
 import { initGUI } from './gui.js';
 import { defaultConfig, loadConfig, saveConfig } from './config.js';
 import { loadMedia, createTexture } from './media.js';
+import { exportPNG } from './export.js';
 
 const config = loadConfig() || structuredClone(defaultConfig);
 let currentMesh = null;
+let currentUnwrapData = null;
+let currentMediaElement = null;
 
 function onChange() {
   saveConfig(config);
   currentMesh = generateGeodesic(config.geometry);
   updateDome(config.geometry);
-  const unwrapData = unwrapMesh({ mesh: currentMesh, ...config.unwrap });
-  render2D(unwrapData);
+  currentUnwrapData = unwrapMesh({ mesh: currentMesh, ...config.unwrap });
+  render2D(currentUnwrapData);
 }
 
 function onMediaLoad(file) {
   loadMedia(file).then(({ element, type }) => {
     config.media.source = file.name;
+    currentMediaElement = element;
     const texture = createTexture(element, type);
     setMediaTexture(texture);
     setMedia(element, currentMesh);
@@ -32,6 +36,7 @@ function onMediaLoad(file) {
 
 function onMediaClear() {
   config.media.source = '';
+  currentMediaElement = null;
   setMediaTexture(null);
   setMedia(null, null);
   onChange();
@@ -40,7 +45,11 @@ function onMediaClear() {
 initSplitView();
 initViewport3D();
 initViewport2D();
-initGUI(config, onChange, { onMediaLoad, onMediaClear });
+initGUI(config, onChange, {
+  onMediaLoad,
+  onMediaClear,
+  onExport: () => exportPNG(currentUnwrapData, config, currentMediaElement, currentMesh),
+});
 onChange(); // initial render
 
 console.log('Dome Dreaming Generator initialized');

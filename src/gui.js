@@ -80,8 +80,7 @@ export function initGUI(config, onChange, callbacks = {}) {
     }
   });
   exportPage.addButton({ title: 'Export PNG' }).on('click', () => {
-    // Placeholder for export functionality (Task 10+)
-    console.log('Export PNG requested', config.export);
+    if (callbacks.onExport) callbacks.onExport();
   });
 
   // --- Config tab ---
