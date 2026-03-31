@@ -20,14 +20,15 @@ export function unwrapMesh(options) {
 
   let faces2D;
   if (layout === 'islands') {
-    // Pepakura-style: separate connected patches, no overlaps
     faces2D = unwrapGenericPatches(vertices, faces, faceGroups, seed);
-  } else if (layout === 'connected' || !isGeodesic || (isGeodesic && frequency > 1)) {
-    // One connected piece, cuts at sharp creases
+  } else if (layout === 'connected') {
     faces2D = unwrapConnected(vertices, faces, faceGroups, seed);
-  } else {
-    // Classic geodesic layouts (flower/strip/cross) for freq 1
+  } else if (isGeodesic && (layout === 'flower' || layout === 'strip' || layout === 'cross')) {
+    // Centered radial layouts — work at all frequencies
     faces2D = unwrapGeodesic(vertices, faces, faceGroups, layout, seed);
+  } else {
+    // Non-geodesic default
+    faces2D = unwrapConnected(vertices, faces, faceGroups, seed);
   }
 
   // Apply overall rotation
