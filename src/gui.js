@@ -50,14 +50,7 @@ export function initGUI(config, onChange, callbacks = {}) {
   });
   unwrapPage.addBinding(config.unwrap, 'gap', { min: 0, max: 1 });
   unwrapPage.addBinding(config.unwrap, 'clusterRotation', { min: 0, max: Math.PI * 2 });
-
-  const organicFolder = unwrapPage.addFolder({ title: 'Organic', expanded: true });
-  organicFolder.addBinding(config.unwrap, 'scatter', { min: 0, max: 2, label: 'scatter' });
-  organicFolder.addBinding(config.unwrap, 'jitter', { min: 0, max: 1, label: 'jitter' });
-  organicFolder.addBinding(config.unwrap, 'groupSpin', { min: 0, max: 1, label: 'group spin' });
-  organicFolder.addBinding(config.unwrap, 'scaleVar', { min: 0, max: 0.5, label: 'scale var' });
-  organicFolder.addBinding(config.unwrap, 'drift', { min: 0, max: 1, label: 'drift' });
-  organicFolder.addBinding(config.unwrap, 'seed', { min: 1, max: 999, step: 1, label: 'seed' });
+  unwrapPage.addBinding(config.unwrap, 'seed', { min: 1, max: 999, step: 1, label: 'net variant' });
 
   // --- Media tab ---
   const mediaPage = tab.pages[2];

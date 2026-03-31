@@ -10,12 +10,7 @@ export const defaultConfig = {
     layout: 'flower',
     gap: 0.1,
     clusterRotation: 0,
-    scatter: 0,
-    jitter: 0,
-    groupSpin: 0,
-    scaleVar: 0,
-    drift: 0,
-    seed: 42,
+    seed: 1,
   },
   media: {
     source: '',
