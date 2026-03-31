@@ -20,13 +20,10 @@ export function unwrapMesh(options) {
 
   let faces2D;
   if (!isGeodesic || layout === 'freeform') {
-    // Generic/freeform: per-triangle Pepakura-style unfolding
-    faces2D = unwrapGenericPatches(vertices, faces, faceGroups, seed);
+    faces2D = unwrapConnected(vertices, faces, faceGroups, seed);
   } else if (frequency > 1) {
-    // Higher frequency geodesic: use per-triangle unfolding for more complex shapes
-    faces2D = unwrapGenericPatches(vertices, faces, faceGroups, seed);
+    faces2D = unwrapConnected(vertices, faces, faceGroups, seed);
   } else {
-    // Frequency 1 geodesic: classic 20-face layouts (flower/strip/cross)
     faces2D = unwrapGeodesic(vertices, faces, faceGroups, layout, seed);
   }
 
@@ -214,6 +211,110 @@ function layoutPetal(baseFaces, seed) {
     result[fi] = [...placed[fi].corners];
   }
   return result;
+}
+
+// ============================================================
+// Connected unwrap: single spanning tree, all faces connected
+// ============================================================
+// One continuous net — seed controls root face and BFS neighbor
+// ordering, producing different branching patterns. Higher frequency
+// means more faces and more complex coastlines/arms.
+
+function unwrapConnected(vertices, faces, faceGroups, seed) {
+  const rand = mulberry32(seed);
+
+  // Build adjacency
+  const edgeMap = {};
+  for (let fi = 0; fi < faces.length; fi++) {
+    const face = faces[fi];
+    for (let e = 0; e < 3; e++) {
+      const v0 = face[e], v1 = face[(e + 1) % 3];
+      const key = Math.min(v0, v1) + ',' + Math.max(v0, v1);
+      if (!edgeMap[key]) edgeMap[key] = [];
+      edgeMap[key].push(fi);
+    }
+  }
+
+  const adj = Array.from({ length: faces.length }, () => []);
+  for (const key of Object.keys(edgeMap)) {
+    const fis = edgeMap[key];
+    if (fis.length === 2) {
+      const [v0, v1] = key.split(',').map(Number);
+      adj[fis[0]].push({ neighbor: fis[1], sharedEdge: [v0, v1] });
+      adj[fis[1]].push({ neighbor: fis[0], sharedEdge: [v0, v1] });
+    }
+  }
+
+  // Pick seed-based starting face
+  const startFace = Math.floor(rand() * faces.length);
+  const placed = {};
+  const visited = new Set([startFace]);
+  const queue = [startFace];
+  const faces2D = [];
+
+  // Place root face
+  const [ai, bi, ci] = faces[startFace];
+  const a = vertices[ai], b = vertices[bi], c = vertices[ci];
+  const dAB = dist3(a, b), dAC = dist3(a, c), dBC = dist3(b, c);
+  if (dAB > 1e-10) {
+    const px = (dAB * dAB + dAC * dAC - dBC * dBC) / (2 * dAB);
+    const py = Math.sqrt(Math.max(0, dAC * dAC - px * px));
+    placed[startFace] = {
+      corners: [[0, 0], [dAB, 0], [px, py]],
+      vm: { [ai]: [0, 0], [bi]: [dAB, 0], [ci]: [px, py] },
+    };
+    faces2D.push({
+      vertices: placed[startFace].corners,
+      groupId: faceGroups[startFace],
+      faceIndex: startFace,
+    });
+  }
+
+  // BFS with shuffled neighbors — different seeds produce different branching
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!placed[current]) continue;
+    const currentVm = placed[current].vm;
+    const currentFace = faces[current];
+
+    // Shuffle neighbors for this face — creates unique branching per seed
+    const neighbors = shuffleArray(adj[current], rand);
+
+    for (const { neighbor, sharedEdge } of neighbors) {
+      if (visited.has(neighbor)) continue;
+      visited.add(neighbor);
+      queue.push(neighbor);
+
+      const [sv0, sv1] = sharedEdge;
+      const currentThird = currentFace.find(v => v !== sv0 && v !== sv1);
+      const reflected = reflectAcrossLine(currentVm[currentThird], currentVm[sv0], currentVm[sv1]);
+      const neighborFace = faces[neighbor];
+      const neighborThird = neighborFace.find(v => v !== sv0 && v !== sv1);
+      const vm = { [sv0]: currentVm[sv0], [sv1]: currentVm[sv1], [neighborThird]: reflected };
+      const corners = neighborFace.map(v => vm[v]);
+      placed[neighbor] = { corners, vm };
+      faces2D.push({
+        vertices: corners,
+        groupId: faceGroups[neighbor],
+        faceIndex: neighbor,
+      });
+    }
+  }
+
+  // Handle disconnected components (rare)
+  for (let fi = 0; fi < faces.length; fi++) {
+    if (visited.has(fi)) continue;
+    visited.add(fi);
+    const [a2, b2, c2] = faces[fi];
+    const va = vertices[a2], vb = vertices[b2], vc = vertices[c2];
+    const d1 = dist3(va, vb), d2 = dist3(va, vc), d3 = dist3(vb, vc);
+    if (d1 < 1e-10) continue;
+    const cpx = (d1 * d1 + d2 * d2 - d3 * d3) / (2 * d1);
+    const cpy = Math.sqrt(Math.max(0, d2 * d2 - cpx * cpx));
+    faces2D.push({ vertices: [[0, 0], [d1, 0], [cpx, cpy]], groupId: faceGroups[fi], faceIndex: fi });
+  }
+
+  return faces2D;
 }
 
 // ============================================================
