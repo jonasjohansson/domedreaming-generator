@@ -13,10 +13,11 @@ export function unwrapMesh(options) {
   const { vertices, faces, faceGroups } = mesh;
 
   let faces2D;
-  if (isGeodesic) {
-    faces2D = unwrapGeodesic(vertices, faces, faceGroups, layout, seed);
-  } else {
+  if (layout === 'freeform' || !isGeodesic) {
+    // Freeform: every triangle is its own face for unfolding
     faces2D = unwrapGenericPatches(vertices, faces, faceGroups, seed);
+  } else {
+    faces2D = unwrapGeodesic(vertices, faces, faceGroups, layout, seed);
   }
 
   // Apply overall rotation
