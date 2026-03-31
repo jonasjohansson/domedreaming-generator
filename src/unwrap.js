@@ -12,11 +12,21 @@ export function unwrapMesh(options) {
   } = options || {};
   const { vertices, faces, faceGroups } = mesh;
 
+  // Determine frequency from face count
+  const groupSet = new Set(faceGroups);
+  const numGroups = groupSet.size;
+  const facesPerGroup = faces.length / numGroups;
+  const frequency = Math.round(Math.sqrt(facesPerGroup));
+
   let faces2D;
-  if (layout === 'freeform' || !isGeodesic) {
-    // Freeform: every triangle is its own face for unfolding
+  if (!isGeodesic || layout === 'freeform') {
+    // Generic/freeform: per-triangle Pepakura-style unfolding
+    faces2D = unwrapGenericPatches(vertices, faces, faceGroups, seed);
+  } else if (frequency > 1) {
+    // Higher frequency geodesic: use per-triangle unfolding for more complex shapes
     faces2D = unwrapGenericPatches(vertices, faces, faceGroups, seed);
   } else {
+    // Frequency 1 geodesic: classic 20-face layouts (flower/strip/cross)
     faces2D = unwrapGeodesic(vertices, faces, faceGroups, layout, seed);
   }
 
