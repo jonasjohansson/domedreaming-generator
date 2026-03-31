@@ -14,14 +14,8 @@
  * @returns {{ faces2D: { vertices: [number,number][], groupId: number, faceIndex: number }[], bounds: object }}
  */
 export function unwrapMesh(options) {
-  const { mesh, layout = 'flower', gap = 0.1, clusterRotation = 0 } = options || {};
+  const { mesh, layout = 'flower', gap = 0.1, clusterRotation = 0, isGeodesic = true } = options || {};
   const { vertices, faces, faceGroups } = mesh;
-
-  // Detect if this is a geodesic mesh (exactly 20 base groups with perfect square face counts)
-  // or an arbitrary mesh (from loaded 3D model)
-  const groupSet = new Set(faceGroups);
-  const numGroups = groupSet.size;
-  const isGeodesic = numGroups <= 20 && isGeodesicMesh(faceGroups, numGroups);
 
   let faces2D;
   if (isGeodesic) {
@@ -62,22 +56,6 @@ export function unwrapMesh(options) {
     faces2D,
     bounds: { width: maxX - minX, height: maxY - minY, minX, minY },
   };
-}
-
-// --- Geodesic detection ---
-
-function isGeodesicMesh(faceGroups, numGroups) {
-  if (numGroups > 20) return false;
-  const counts = {};
-  for (const g of faceGroups) {
-    counts[g] = (counts[g] || 0) + 1;
-  }
-  const vals = Object.values(counts);
-  const first = vals[0];
-  // All groups should have the same count (freq²) and it should be a perfect square
-  const allSame = vals.every(v => v === first);
-  const sqrt = Math.sqrt(first);
-  return allSame && Math.round(sqrt) * Math.round(sqrt) === first;
 }
 
 // --- Geodesic unwrap (icosahedron net with barycentric subdivision) ---
@@ -135,10 +113,13 @@ function unwrapGeodesic(vertices, faces, faceGroups, layout, gap) {
   return faces2D;
 }
 
-// --- Generic unwrap (BFS edge-based unfolding for arbitrary meshes) ---
+// --- Generic unwrap (grid strip layout for arbitrary meshes) ---
+// BFS edge-unfolding doesn't work for complex meshes (massive overlaps).
+// Instead: flatten each face preserving edge lengths, pack in a grid strip
+// ordered by BFS traversal so adjacent faces stay near each other.
 
 function unwrapGeneric(vertices, faces, faceGroups, gap) {
-  // Build face adjacency from the actual mesh
+  // BFS to determine face ordering (locality-preserving)
   const edgeMap = {};
   for (let fi = 0; fi < faces.length; fi++) {
     const face = faces[fi];
@@ -155,78 +136,86 @@ function unwrapGeneric(vertices, faces, faceGroups, gap) {
   for (const key of Object.keys(edgeMap)) {
     const fis = edgeMap[key];
     if (fis.length === 2) {
-      const [v0, v1] = key.split(',').map(Number);
-      adj[fis[0]].push({ neighbor: fis[1], sharedEdge: [v0, v1] });
-      adj[fis[1]].push({ neighbor: fis[0], sharedEdge: [v0, v1] });
+      adj[fis[0]].push(fis[1]);
+      adj[fis[1]].push(fis[0]);
     }
   }
 
-  // BFS unfolding from face 0
-  const placed = {};
-  const root = 0;
-  const [ai, bi, ci] = faces[root];
-  const a = vertices[ai], b = vertices[bi], c = vertices[ci];
-
-  // Flatten root triangle preserving edge lengths
-  const dAB = dist3(a, b);
-  const dAC = dist3(a, c);
-  const dBC = dist3(b, c);
-
-  const p0 = [0, 0];
-  const p1 = [dAB, 0];
-  const cxPos = (dAB * dAB + dAC * dAC - dBC * dBC) / (2 * dAB);
-  const cyPos = Math.sqrt(Math.max(0, dAC * dAC - cxPos * cxPos));
-  const p2 = [cxPos, cyPos];
-
-  placed[root] = {
-    corners: [p0, p1, p2],
-    vm: { [ai]: p0, [bi]: p1, [ci]: p2 },
-  };
-
-  const queue = [root];
-  const visited = new Set([root]);
-
-  while (queue.length > 0) {
-    const current = queue.shift();
-    const currentVm = placed[current].vm;
-    const currentFace = faces[current];
-
-    for (const { neighbor, sharedEdge } of adj[current]) {
-      if (visited.has(neighbor)) continue;
-      visited.add(neighbor);
-      queue.push(neighbor);
-
-      const [sv0, sv1] = sharedEdge;
-      const edgeP0 = currentVm[sv0];
-      const edgeP1 = currentVm[sv1];
-
-      const currentThird = currentFace.find(v => v !== sv0 && v !== sv1);
-      const currentThirdP = currentVm[currentThird];
-
-      const neighborFace = faces[neighbor];
-      const neighborThird = neighborFace.find(v => v !== sv0 && v !== sv1);
-
-      const reflected = reflectAcrossLine(currentThirdP, edgeP0, edgeP1);
-
-      const vm = { [sv0]: edgeP0, [sv1]: edgeP1, [neighborThird]: reflected };
-      const corners = neighborFace.map(v => vm[v]);
-      placed[neighbor] = { corners, vm };
+  // BFS ordering
+  const order = [];
+  const visited = new Set();
+  for (let start = 0; start < faces.length; start++) {
+    if (visited.has(start)) continue;
+    const queue = [start];
+    visited.add(start);
+    while (queue.length > 0) {
+      const current = queue.shift();
+      order.push(current);
+      for (const neighbor of adj[current]) {
+        if (visited.has(neighbor)) continue;
+        visited.add(neighbor);
+        queue.push(neighbor);
+      }
     }
   }
 
-  // Build faces2D with optional gap
+  // Flatten each face preserving edge lengths, find max size for grid
+  const flatFaces = [];
+  let maxW = 0, maxH = 0;
+
+  for (const fi of order) {
+    const [ai, bi, ci] = faces[fi];
+    const a = vertices[ai], b = vertices[bi], c = vertices[ci];
+    const corners = flattenTriangle3D(a, b, c);
+
+    // Compute bounding box
+    let mnX = Infinity, mnY = Infinity, mxX = -Infinity, mxY = -Infinity;
+    for (const [x, y] of corners) {
+      mnX = Math.min(mnX, x); mnY = Math.min(mnY, y);
+      mxX = Math.max(mxX, x); mxY = Math.max(mxY, y);
+    }
+    const w = mxX - mnX, h = mxY - mnY;
+    maxW = Math.max(maxW, w);
+    maxH = Math.max(maxH, h);
+
+    // Center the triangle at origin
+    const cx = (mnX + mxX) / 2, cy = (mnY + mxY) / 2;
+    const centered = corners.map(([x, y]) => [x - cx, y - cy]);
+    flatFaces.push({ corners: centered, groupId: faceGroups[fi], faceIndex: fi });
+  }
+
+  // Pack into grid
+  const cellW = maxW * (1 + gap * 0.5);
+  const cellH = maxH * (1 + gap * 0.5);
+  const cols = Math.ceil(Math.sqrt(flatFaces.length * (cellW / cellH)));
+
   const faces2D = [];
-  for (let fi = 0; fi < faces.length; fi++) {
-    if (!placed[fi]) continue;
-    let corners = placed[fi].corners;
-    if (gap > 0) corners = shrinkTriangle(corners, gap);
+  for (let i = 0; i < flatFaces.length; i++) {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const ox = col * cellW;
+    const oy = row * cellH;
+
+    const f = flatFaces[i];
+    const shifted = f.corners.map(([x, y]) => [x + ox, y + oy]);
+
     faces2D.push({
-      vertices: corners,
-      groupId: faceGroups[fi],
-      faceIndex: fi,
+      vertices: gap > 0 ? shrinkTriangle(shifted, gap * 0.3) : shifted,
+      groupId: f.groupId,
+      faceIndex: f.faceIndex,
     });
   }
   return faces2D;
+}
+
+function flattenTriangle3D(a, b, c) {
+  const dAB = dist3(a, b);
+  const dAC = dist3(a, c);
+  const dBC = dist3(b, c);
+  if (dAB < 1e-10) return [[0, 0], [0, 0], [0, 0]];
+  const px = (dAB * dAB + dAC * dAC - dBC * dBC) / (2 * dAB);
+  const py = Math.sqrt(Math.max(0, dAC * dAC - px * px));
+  return [[0, 0], [dAB, 0], [px, py]];
 }
 
 function dist3(a, b) {

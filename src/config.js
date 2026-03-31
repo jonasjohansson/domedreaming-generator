@@ -2,7 +2,7 @@ export const defaultConfig = {
   geometry: {
     frequency: 2,
     radius: 1,
-    hemisphere: true,
+    hemisphere: false,
     truncation: 0.5,
     rotation: 0,
   },

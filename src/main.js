@@ -26,7 +26,7 @@ function onChange() {
     updateDome(config.geometry);
   }
 
-  currentUnwrapData = unwrapMesh({ mesh: currentMesh, ...config.unwrap });
+  currentUnwrapData = unwrapMesh({ mesh: currentMesh, ...config.unwrap, isGeodesic: !customModel });
   render2D(currentUnwrapData);
 
   // Re-apply media to updated mesh
