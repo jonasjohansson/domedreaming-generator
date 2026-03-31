@@ -212,7 +212,9 @@ function layoutPetal(baseFaces, seed) {
 
 function unwrapGenericPatches(vertices, faces, faceGroups, seed) {
   const rand = mulberry32(seed);
-  const MAX_PATCH = 50;
+
+  // Scale patch size with face count: more faces → smaller patches → more variety
+  const MAX_PATCH = Math.max(4, Math.min(25, Math.floor(faces.length / 10)));
 
   // Build adjacency with dihedral angles
   const edgeMap = {};
@@ -249,8 +251,11 @@ function unwrapGenericPatches(vertices, faces, faceGroups, seed) {
     }
   }
 
-  // Sort by angle: flattest first (greedy merge for flat regions)
-  sharedEdges.sort((a, b) => a.angle - b.angle);
+  // Shuffle edges with seed, then sort by angle (flattest first)
+  // The shuffle ensures different seeds produce different merge orders
+  // for edges with similar angles (like on a sphere)
+  const shuffled = shuffleArray(sharedEdges, rand);
+  shuffled.sort((a, b) => a.angle - b.angle + (rand() - 0.5) * 0.3);
 
   // Union-Find to group faces into patches
   const parent = Array.from({ length: faces.length }, (_, i) => i);
@@ -269,15 +274,16 @@ function unwrapGenericPatches(vertices, faces, faceGroups, seed) {
     return true;
   }
 
-  // Merge faces across flat edges, respecting max patch size
-  // Add some seed-based randomness: occasionally skip a flat edge
+  // Merge faces: use angle for hard meshes, random cuts for smooth ones
+  // On a sphere, most angles are similar, so randomness drives the cuts
   const mergedEdges = new Set();
-  for (const se of sharedEdges) {
+  for (const se of shuffled) {
     const ra = find(se.f1), rb = find(se.f2);
     if (ra === rb) continue;
     if (patchSize[ra] + patchSize[rb] > MAX_PATCH) continue;
-    // Small chance to skip (seed variety) — but only for non-trivial angles
-    if (se.angle > 0.3 && rand() < 0.15) continue;
+    // Always cut sharp edges; randomly cut smooth ones for variety
+    if (se.angle > 0.8) continue;
+    if (rand() < 0.25) continue; // 25% chance to cut any edge → creates organic boundaries
     union(se.f1, se.f2);
     mergedEdges.add(se.f1 + ',' + se.f2);
     mergedEdges.add(se.f2 + ',' + se.f1);
