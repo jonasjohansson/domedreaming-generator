@@ -120,3 +120,20 @@ body {
   height: 100%;
   display: block;
 }
+
+/* Drag-and-drop overlay */
+body.drag-over::after {
+  content: 'Drop 3D model or media file';
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(17, 17, 17, 0.85);
+  border: 2px dashed #555;
+  color: #fff;
+  font-family: 'OffBit', monospace;
+  font-size: 1.5rem;
+  z-index: 9999;
+  pointer-events: none;
+}

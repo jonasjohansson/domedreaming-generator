@@ -82,4 +82,30 @@ initGUI(config, onChange, {
 });
 onChange();
 
+// Drag-and-drop support for 3D models and media
+const MODEL_EXTS = ['glb', 'gltf', 'fbx', 'obj'];
+const MEDIA_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'mp4', 'webm', 'mov'];
+
+document.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  document.body.classList.add('drag-over');
+});
+document.addEventListener('dragleave', (e) => {
+  if (e.target === document.body || !document.body.contains(e.relatedTarget)) {
+    document.body.classList.remove('drag-over');
+  }
+});
+document.addEventListener('drop', (e) => {
+  e.preventDefault();
+  document.body.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (MODEL_EXTS.includes(ext)) {
+    onModelLoad(file);
+  } else if (MEDIA_EXTS.includes(ext) || file.type.startsWith('image/') || file.type.startsWith('video/')) {
+    onMediaLoad(file);
+  }
+});
+
 console.log('Dome Dreaming Generator initialized');
