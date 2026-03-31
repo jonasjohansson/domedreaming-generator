@@ -105,9 +105,9 @@ body {
 }
 
 #divider {
-  width: 4px;
-  background: #333;
+  width: 6px;
   cursor: col-resize;
+  background: #333;
   flex-shrink: 0;
 }
 
