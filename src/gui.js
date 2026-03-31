@@ -3,6 +3,9 @@ import * as EssentialsPlugin from '@tweakpane/plugin-essentials';
 import { saveConfig, loadConfig, saveConfigToFile, loadConfigFromFile } from './config.js';
 
 const PRESETS = {
+  'IG Square': { width: 1080, height: 1080 },
+  'IG Portrait': { width: 1080, height: 1350 },
+  'IG Story': { width: 1080, height: 1920 },
   '1080p': { width: 1920, height: 1080 },
   '4K': { width: 3840, height: 2160 },
   'Print': { width: 4000, height: 4000 },
@@ -81,7 +84,7 @@ export function initGUI(config, onChange, callbacks = {}) {
   const widthBinding = exportPage.addBinding(config.export, 'width', { min: 100, max: 8000, step: 1 });
   const heightBinding = exportPage.addBinding(config.export, 'height', { min: 100, max: 8000, step: 1 });
   exportPage.addBinding(config.export, 'preset', {
-    options: { '1080p': '1080p', '4K': '4K', 'Print': 'Print' },
+    options: { 'IG Square': 'IG Square', 'IG Portrait': 'IG Portrait', 'IG Story': 'IG Story', '1080p': '1080p', '4K': '4K', 'Print': 'Print' },
   }).on('change', (ev) => {
     const preset = PRESETS[ev.value];
     if (preset) {
