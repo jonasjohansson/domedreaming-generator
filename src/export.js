@@ -1,24 +1,20 @@
 /**
  * High-resolution PNG export for the 2D unwrap view.
- * Creates an offscreen canvas at the configured resolution,
- * re-renders the unwrap with media or colored fills, and triggers download.
+ * Renders with media (image/video current frame) when present,
+ * falls back to colored fills otherwise.
  */
 
 import { drawFaceMedia, computeUVs } from './media.js';
 
-// 20-color HSL palette matching viewport-2d.js
-const colorPalette = Array.from({ length: 20 }, (_, i) => {
-  const hue = (i / 20) * 360;
+const MAX_COLORS = 64;
+const colorPalette = Array.from({ length: MAX_COLORS }, (_, i) => {
+  const hue = (i / MAX_COLORS) * 360;
   return `hsl(${hue}, 65%, 55%)`;
 });
 
 /**
  * Export the 2D unwrap as a high-resolution PNG.
- *
- * @param {object} unwrapData - Output from unwrapMesh() with faces2D and bounds
- * @param {object} config - App config with export.width and export.height
- * @param {HTMLImageElement|HTMLVideoElement|null} mediaElement - Current media element
- * @param {object|null} mesh - Geodesic mesh with vertices and faces
+ * Captures the current video frame if video media is loaded.
  */
 export async function exportPNG(unwrapData, config, mediaElement, mesh) {
   if (!unwrapData) {
@@ -32,18 +28,13 @@ export async function exportPNG(unwrapData, config, mediaElement, mesh) {
   canvas.height = height;
   const ctx = canvas.getContext('2d');
 
-  // Clear with dark background
-  ctx.fillStyle = '#111111';
-  ctx.fillRect(0, 0, width, height);
+  // Transparent background (let the faces define the shape)
+  ctx.clearRect(0, 0, width, height);
 
-  // Compute scale to fit unwrap bounds into canvas with padding
   const padding = Math.min(width, height) * 0.05;
   const { bounds } = unwrapData;
 
-  if (bounds.width === 0 || bounds.height === 0) {
-    console.warn('Unwrap bounds have zero size');
-    return;
-  }
+  if (bounds.width === 0 || bounds.height === 0) return;
 
   const scaleX = (width - padding * 2) / bounds.width;
   const scaleY = (height - padding * 2) / bounds.height;
@@ -51,63 +42,78 @@ export async function exportPNG(unwrapData, config, mediaElement, mesh) {
   const offsetX = (width - bounds.width * scale) / 2 - bounds.minX * scale;
   const offsetY = (height - bounds.height * scale) / 2 - bounds.minY * scale;
 
+  // For video: ensure we have a current frame to draw
+  // (pause briefly if needed so drawImage captures the frame)
+  let mediaSource = mediaElement;
+  if (mediaElement && mediaElement.tagName === 'VIDEO') {
+    // Capture current video frame to a static canvas for reliable export
+    const vidW = mediaElement.videoWidth;
+    const vidH = mediaElement.videoHeight;
+    if (vidW && vidH) {
+      const frameCanvas = document.createElement('canvas');
+      frameCanvas.width = vidW;
+      frameCanvas.height = vidH;
+      const frameCtx = frameCanvas.getContext('2d');
+      frameCtx.drawImage(mediaElement, 0, 0);
+      // Use the frame canvas as the media source (static snapshot)
+      mediaSource = frameCanvas;
+    }
+  }
+
   // Compute UVs if media is available
   let mediaUVs = null;
-  if (mediaElement && mesh) {
+  if (mediaSource && mesh) {
     mediaUVs = computeUVs(mesh.vertices, mesh.faces);
   }
 
   // Draw each face
   for (const face of unwrapData.faces2D) {
-    // Transform vertices to canvas coords
     const pts = face.vertices.map(([x, y]) => [
       x * scale + offsetX,
       y * scale + offsetY,
     ]);
 
     const [[x0, y0], [x1, y1], [x2, y2]] = pts;
-    const colorIndex = face.groupId % colorPalette.length;
 
-    // Try media rendering if available
+    // Media rendering
     let mediaDrawn = false;
-    if (mediaElement && mediaUVs && face.faceIndex != null) {
+    if (mediaSource && mediaUVs && face.faceIndex != null) {
       const fi = face.faceIndex;
       const uvOffset = fi * 3 * 2;
-      const faceUVArray = [
-        [mediaUVs[uvOffset], mediaUVs[uvOffset + 1]],
-        [mediaUVs[uvOffset + 2], mediaUVs[uvOffset + 3]],
-        [mediaUVs[uvOffset + 4], mediaUVs[uvOffset + 5]],
-      ];
-
-      ctx.save();
-      drawFaceMedia(ctx, pts, mediaElement, faceUVArray);
-      ctx.restore();
-      mediaDrawn = true;
+      if (uvOffset + 5 < mediaUVs.length) {
+        const faceUVArray = [
+          [mediaUVs[uvOffset], mediaUVs[uvOffset + 1]],
+          [mediaUVs[uvOffset + 2], mediaUVs[uvOffset + 3]],
+          [mediaUVs[uvOffset + 4], mediaUVs[uvOffset + 5]],
+        ];
+        ctx.save();
+        drawFaceMedia(ctx, pts, mediaSource, faceUVArray);
+        ctx.restore();
+        mediaDrawn = true;
+      }
     }
 
     if (!mediaDrawn) {
-      // Draw colored fill
       ctx.beginPath();
       ctx.moveTo(x0, y0);
       ctx.lineTo(x1, y1);
       ctx.lineTo(x2, y2);
       ctx.closePath();
-      ctx.fillStyle = colorPalette[colorIndex];
+      ctx.fillStyle = colorPalette[face.groupId % colorPalette.length];
       ctx.fill();
     }
 
-    // Wireframe stroke
+    // Wireframe
     ctx.beginPath();
     ctx.moveTo(x0, y0);
     ctx.lineTo(x1, y1);
     ctx.lineTo(x2, y2);
     ctx.closePath();
-    ctx.strokeStyle = '#222';
-    ctx.lineWidth = Math.max(1, scale * 0.5);
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    ctx.lineWidth = Math.max(0.5, scale * 0.3);
     ctx.stroke();
   }
 
-  // Trigger download
   const blob = await new Promise((r) => canvas.toBlob(r, 'image/png'));
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
