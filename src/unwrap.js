@@ -275,23 +275,27 @@ function unwrapCenteredFlower(vertices, faces, faceGroups, seed) {
   const queue = [startFace];
   const faces2D = [];
 
-  // Place root face centered at origin
+  // Estimate cell size from first face
   const [ai, bi, ci] = faces[startFace];
   const a = vertices[ai], b = vertices[bi], c = vertices[ci];
   const dAB = dist3(a, b), dAC = dist3(a, c), dBC = dist3(b, c);
+  const overlapChecker = createOverlapChecker(Math.max(dAB, dAC, dBC) * 2);
+  const deferred = [];
+
   if (dAB > 1e-10) {
     const px = (dAB * dAB + dAC * dAC - dBC * dBC) / (2 * dAB);
     const py = Math.sqrt(Math.max(0, dAC * dAC - px * px));
-    // Center the root triangle at origin
     const cx = (0 + dAB + px) / 3, cy = (0 + 0 + py) / 3;
+    const corners = [[-cx, -cy], [dAB - cx, -cy], [px - cx, py - cy]];
     placed[startFace] = {
-      corners: [[-cx, -cy], [dAB - cx, -cy], [px - cx, py - cy]],
-      vm: { [ai]: [-cx, -cy], [bi]: [dAB - cx, -cy], [ci]: [px - cx, py - cy] },
+      corners,
+      vm: { [ai]: corners[0], [bi]: corners[1], [ci]: corners[2] },
     };
-    faces2D.push({ vertices: placed[startFace].corners, groupId: faceGroups[startFace], faceIndex: startFace });
+    overlapChecker.addTriangle(corners);
+    faces2D.push({ vertices: corners, groupId: faceGroups[startFace], faceIndex: startFace });
   }
 
-  // BFS with shuffled neighbors — radiates outward from center
+  // BFS with overlap detection — skip faces that would overlap
   while (queue.length > 0) {
     const current = queue.shift();
     if (!placed[current]) continue;
@@ -302,7 +306,6 @@ function unwrapCenteredFlower(vertices, faces, faceGroups, seed) {
     for (const { neighbor, sharedEdge } of neighbors) {
       if (visited.has(neighbor)) continue;
       visited.add(neighbor);
-      queue.push(neighbor);
 
       const [sv0, sv1] = sharedEdge;
       const currentThird = currentFace.find(v => v !== sv0 && v !== sv1);
@@ -311,10 +314,22 @@ function unwrapCenteredFlower(vertices, faces, faceGroups, seed) {
       const neighborThird = neighborFace.find(v => v !== sv0 && v !== sv1);
       const vm = { [sv0]: currentVm[sv0], [sv1]: currentVm[sv1], [neighborThird]: reflected };
       const corners = neighborFace.map(v => vm[v]);
+
+      if (overlapChecker.wouldOverlap(corners)) {
+        deferred.push(neighbor);
+        continue;
+      }
+
+      queue.push(neighbor);
       placed[neighbor] = { corners, vm };
+      overlapChecker.addTriangle(corners);
       faces2D.push({ vertices: corners, groupId: faceGroups[neighbor], faceIndex: neighbor });
     }
   }
+
+  // Deferred faces become small satellite islands (arranged nearby)
+  // For now, skip them — the main shape is overlap-free
+  // TODO: arrange deferred faces as separate islands if needed
 
   return faces2D;
 }
@@ -365,32 +380,28 @@ function unwrapConnected(vertices, faces, faceGroups, seed) {
     }
   }
 
-  // BFS unfolding — skip edges at sharp creases (high dihedral angle)
-  // This keeps one main connected piece but trims spiky branches
-  const CREASE_THRESHOLD = 0.6; // ~34° — edges sharper than this get cut
+  // BFS unfolding with overlap detection + crease cutting
+  const CREASE_THRESHOLD = 0.6;
   const startFace = Math.floor(rand() * faces.length);
   const placed = {};
   const visited = new Set([startFace]);
   const queue = [startFace];
   const faces2D = [];
-  const deferred = []; // faces skipped due to sharp creases
+  const deferred = [];
 
   // Place root face
   const [ai, bi, ci] = faces[startFace];
   const a = vertices[ai], b = vertices[bi], c = vertices[ci];
   const dAB = dist3(a, b), dAC = dist3(a, c), dBC = dist3(b, c);
+  const overlapChecker = createOverlapChecker(Math.max(dAB, dAC, dBC) * 2 || 1);
+
   if (dAB > 1e-10) {
     const px = (dAB * dAB + dAC * dAC - dBC * dBC) / (2 * dAB);
     const py = Math.sqrt(Math.max(0, dAC * dAC - px * px));
-    placed[startFace] = {
-      corners: [[0, 0], [dAB, 0], [px, py]],
-      vm: { [ai]: [0, 0], [bi]: [dAB, 0], [ci]: [px, py] },
-    };
-    faces2D.push({
-      vertices: placed[startFace].corners,
-      groupId: faceGroups[startFace],
-      faceIndex: startFace,
-    });
+    const corners = [[0, 0], [dAB, 0], [px, py]];
+    placed[startFace] = { corners, vm: { [ai]: [0, 0], [bi]: [dAB, 0], [ci]: [px, py] } };
+    overlapChecker.addTriangle(corners);
+    faces2D.push({ vertices: corners, groupId: faceGroups[startFace], faceIndex: startFace });
   }
 
   while (queue.length > 0) {
@@ -398,8 +409,6 @@ function unwrapConnected(vertices, faces, faceGroups, seed) {
     if (!placed[current]) continue;
     const currentVm = placed[current].vm;
     const currentFace = faces[current];
-
-    // Sort neighbors: flattest edges first, then shuffle within similar angles
     const neighbors = shuffleArray(adj[current], rand);
     neighbors.sort((a, b) => a.angle - b.angle);
 
@@ -407,13 +416,11 @@ function unwrapConnected(vertices, faces, faceGroups, seed) {
       if (visited.has(neighbor)) continue;
       visited.add(neighbor);
 
-      // Cut at sharp creases — defer these faces
+      // Cut at sharp creases
       if (angle > CREASE_THRESHOLD) {
         deferred.push(neighbor);
         continue;
       }
-
-      queue.push(neighbor);
 
       const [sv0, sv1] = sharedEdge;
       const currentThird = currentFace.find(v => v !== sv0 && v !== sv1);
@@ -422,22 +429,26 @@ function unwrapConnected(vertices, faces, faceGroups, seed) {
       const neighborThird = neighborFace.find(v => v !== sv0 && v !== sv1);
       const vm = { [sv0]: currentVm[sv0], [sv1]: currentVm[sv1], [neighborThird]: reflected };
       const corners = neighborFace.map(v => vm[v]);
+
+      // Skip if would overlap existing faces
+      if (overlapChecker.wouldOverlap(corners)) {
+        deferred.push(neighbor);
+        continue;
+      }
+
+      queue.push(neighbor);
       placed[neighbor] = { corners, vm };
-      faces2D.push({
-        vertices: corners,
-        groupId: faceGroups[neighbor],
-        faceIndex: neighbor,
-      });
+      overlapChecker.addTriangle(corners);
+      faces2D.push({ vertices: corners, groupId: faceGroups[neighbor], faceIndex: neighbor });
     }
   }
 
-  // Process deferred faces: unfold them as small connected sub-nets
-  // starting from each deferred face, using the same crease-aware BFS
+  // Process deferred faces as separate overlap-free sub-nets
   for (const dStart of deferred) {
-    if (placed[dStart]) continue; // already placed via another path
+    if (placed[dStart]) continue;
 
     const subQueue = [dStart];
-    const subPlaced = {};
+    const subOverlap = createOverlapChecker(Math.max(dAB, dAC, dBC) * 2 || 1);
 
     const [da, db, dc] = faces[dStart];
     const va = vertices[da], vb = vertices[db], vc = vertices[dc];
@@ -445,21 +456,15 @@ function unwrapConnected(vertices, faces, faceGroups, seed) {
     if (d1 < 1e-10) continue;
     const cpx = (d1 * d1 + d2 * d2 - d3 * d3) / (2 * d1);
     const cpy = Math.sqrt(Math.max(0, d2 * d2 - cpx * cpx));
+    const subCorners = [[0, 0], [d1, 0], [cpx, cpy]];
 
-    subPlaced[dStart] = {
-      corners: [[0, 0], [d1, 0], [cpx, cpy]],
-      vm: { [da]: [0, 0], [db]: [d1, 0], [dc]: [cpx, cpy] },
-    };
-    placed[dStart] = subPlaced[dStart];
-    faces2D.push({
-      vertices: subPlaced[dStart].corners,
-      groupId: faceGroups[dStart],
-      faceIndex: dStart,
-    });
+    placed[dStart] = { corners: subCorners, vm: { [da]: [0, 0], [db]: [d1, 0], [dc]: [cpx, cpy] } };
+    subOverlap.addTriangle(subCorners);
+    faces2D.push({ vertices: subCorners, groupId: faceGroups[dStart], faceIndex: dStart });
 
     while (subQueue.length > 0) {
       const current = subQueue.shift();
-      const curVm = subPlaced[current]?.vm || placed[current]?.vm;
+      const curVm = placed[current]?.vm;
       if (!curVm) continue;
       const curFace = faces[current];
       const nbrs = shuffleArray(adj[current], rand);
@@ -468,7 +473,6 @@ function unwrapConnected(vertices, faces, faceGroups, seed) {
         if (visited.has(neighbor) || placed[neighbor]) continue;
         visited.add(neighbor);
         if (angle > CREASE_THRESHOLD) { deferred.push(neighbor); continue; }
-        subQueue.push(neighbor);
 
         const [sv0, sv1] = sharedEdge;
         const curThird = curFace.find(v => v !== sv0 && v !== sv1);
@@ -477,8 +481,12 @@ function unwrapConnected(vertices, faces, faceGroups, seed) {
         const nbrThird = nbrFace.find(v => v !== sv0 && v !== sv1);
         const vm = { [sv0]: curVm[sv0], [sv1]: curVm[sv1], [nbrThird]: refl };
         const corners = nbrFace.map(v => vm[v]);
-        subPlaced[neighbor] = { corners, vm };
-        placed[neighbor] = subPlaced[neighbor];
+
+        if (subOverlap.wouldOverlap(corners)) { deferred.push(neighbor); continue; }
+
+        subQueue.push(neighbor);
+        placed[neighbor] = { corners, vm };
+        subOverlap.addTriangle(corners);
         faces2D.push({ vertices: corners, groupId: faceGroups[neighbor], faceIndex: neighbor });
       }
     }
@@ -714,6 +722,95 @@ function unwrapGenericPatches(vertices, faces, faceGroups, seed) {
 // ============================================================
 // Helpers
 // ============================================================
+
+// ============================================================
+// Triangle overlap detection (spatial grid + SAT)
+// ============================================================
+
+function createOverlapChecker(cellSize) {
+  const grid = {};
+  const allTris = [];
+
+  function keyFor(x, y) {
+    return Math.floor(x / cellSize) + ',' + Math.floor(y / cellSize);
+  }
+
+  function getCells(tri) {
+    let mnX = Infinity, mnY = Infinity, mxX = -Infinity, mxY = -Infinity;
+    for (const [x, y] of tri) {
+      mnX = Math.min(mnX, x); mnY = Math.min(mnY, y);
+      mxX = Math.max(mxX, x); mxY = Math.max(mxY, y);
+    }
+    const cells = [];
+    for (let gx = Math.floor(mnX / cellSize); gx <= Math.floor(mxX / cellSize); gx++) {
+      for (let gy = Math.floor(mnY / cellSize); gy <= Math.floor(mxY / cellSize); gy++) {
+        cells.push(gx + ',' + gy);
+      }
+    }
+    return cells;
+  }
+
+  function addTriangle(tri) {
+    const idx = allTris.length;
+    allTris.push(tri);
+    for (const cell of getCells(tri)) {
+      if (!grid[cell]) grid[cell] = [];
+      grid[cell].push(idx);
+    }
+  }
+
+  function wouldOverlap(tri) {
+    const checked = new Set();
+    for (const cell of getCells(tri)) {
+      const bucket = grid[cell];
+      if (!bucket) continue;
+      for (const idx of bucket) {
+        if (checked.has(idx)) continue;
+        checked.add(idx);
+        if (trianglesOverlap(tri, allTris[idx])) return true;
+      }
+    }
+    return false;
+  }
+
+  return { addTriangle, wouldOverlap };
+}
+
+// 2D triangle-triangle overlap using Separating Axis Theorem
+function trianglesOverlap(t1, t2) {
+  // Shrink triangles slightly to allow edge-touching without flagging overlap
+  const s1 = shrinkTri(t1, 0.02);
+  const s2 = shrinkTri(t2, 0.02);
+  return satOverlap(s1, s2) && satOverlap(s2, s1);
+}
+
+function shrinkTri(tri, amount) {
+  const cx = (tri[0][0] + tri[1][0] + tri[2][0]) / 3;
+  const cy = (tri[0][1] + tri[1][1] + tri[2][1]) / 3;
+  const f = 1 - amount;
+  return tri.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f]);
+}
+
+function satOverlap(t1, t2) {
+  for (let i = 0; i < 3; i++) {
+    const j = (i + 1) % 3;
+    const ax = t1[j][0] - t1[i][0], ay = t1[j][1] - t1[i][1];
+    // Normal to edge
+    const nx = -ay, ny = ax;
+    let min1 = Infinity, max1 = -Infinity;
+    for (const p of t1) {
+      const d = p[0] * nx + p[1] * ny;
+      min1 = Math.min(min1, d); max1 = Math.max(max1, d);
+    }
+    let min2 = Infinity, max2 = -Infinity;
+    for (const p of t2) {
+      const d = p[0] * nx + p[1] * ny;
+      min2 = Math.min(min2, d); max2 = Math.max(max2, d);
+    }
+    if (max1 <= min2 || max2 <= min1) return false; // separating axis found
+  }
+  return true; // no separating axis → overlap
+}
 
 function dist3(a, b) {
   const dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2];
