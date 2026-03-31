@@ -123,6 +123,10 @@ function extractMesh(root) {
     throw new Error('No mesh geometry found in model');
   }
 
+  // Weld duplicate vertices (critical for face adjacency detection)
+  // Vertices at the same position get merged into a single index
+  weldVertices(allVertices, allFaces, allNormals);
+
   // Normalize: center and scale to unit sphere
   const center = new THREE.Vector3();
   let maxDist = 0;
@@ -150,4 +154,47 @@ function extractMesh(root) {
     normals: allNormals,
     faceGroups: allFaceGroups,
   };
+}
+
+/**
+ * Weld duplicate vertices by position.
+ * Vertices within epsilon distance get the same index.
+ * Modifies faces in-place, compacts vertices/normals arrays.
+ */
+function weldVertices(vertices, faces, normals) {
+  const PRECISION = 5; // decimal places for position key
+  const indexMap = {}; // position key → new index
+  const newVertices = [];
+  const newNormals = [];
+  const oldToNew = new Array(vertices.length);
+
+  for (let i = 0; i < vertices.length; i++) {
+    const v = vertices[i];
+    const key = v.map(c => c.toFixed(PRECISION)).join(',');
+
+    if (indexMap[key] !== undefined) {
+      oldToNew[i] = indexMap[key];
+    } else {
+      const newIdx = newVertices.length;
+      indexMap[key] = newIdx;
+      oldToNew[i] = newIdx;
+      newVertices.push(v);
+      newNormals.push(normals[i]);
+    }
+  }
+
+  // Remap face indices
+  for (let fi = 0; fi < faces.length; fi++) {
+    faces[fi][0] = oldToNew[faces[fi][0]];
+    faces[fi][1] = oldToNew[faces[fi][1]];
+    faces[fi][2] = oldToNew[faces[fi][2]];
+  }
+
+  // Replace arrays in-place
+  vertices.length = 0;
+  normals.length = 0;
+  for (let i = 0; i < newVertices.length; i++) {
+    vertices.push(newVertices[i]);
+    normals.push(newNormals[i]);
+  }
 }
