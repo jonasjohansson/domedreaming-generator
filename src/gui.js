@@ -1,6 +1,6 @@
 import { Pane } from 'tweakpane';
 import * as EssentialsPlugin from '@tweakpane/plugin-essentials';
-import { saveConfig, loadConfig } from './config.js';
+import { saveConfig, loadConfig, saveConfigToFile, loadConfigFromFile } from './config.js';
 
 const PRESETS = {
   '1080p': { width: 1920, height: 1080 },
@@ -86,38 +86,17 @@ export function initGUI(config, onChange, callbacks = {}) {
   // --- Config tab ---
   const configPage = tab.pages[4];
   configPage.addButton({ title: 'Save Config' }).on('click', () => {
-    const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'domedreaming-config.json';
-    a.click();
-    URL.revokeObjectURL(url);
+    saveConfigToFile(config);
   });
-  configPage.addButton({ title: 'Load Config' }).on('click', () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
-    input.onchange = (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        try {
-          const loaded = JSON.parse(ev.target.result);
-          Object.assign(config.geometry, loaded.geometry);
-          Object.assign(config.unwrap, loaded.unwrap);
-          Object.assign(config.media, loaded.media);
-          Object.assign(config.export, loaded.export);
-          pane.refresh();
-          onChange();
-        } catch (err) {
-          console.error('Failed to load config:', err);
-        }
-      };
-      reader.readAsText(file);
-    };
-    input.click();
+  configPage.addButton({ title: 'Load Config' }).on('click', async () => {
+    const loaded = await loadConfigFromFile();
+    if (!loaded) return;
+    if (loaded.geometry) Object.assign(config.geometry, loaded.geometry);
+    if (loaded.unwrap) Object.assign(config.unwrap, loaded.unwrap);
+    if (loaded.media) Object.assign(config.media, loaded.media);
+    if (loaded.export) Object.assign(config.export, loaded.export);
+    pane.refresh();
+    onChange();
   });
 
   // Listen for all changes and call onChange

@@ -33,3 +33,29 @@ export function loadConfig() {
 export function saveConfig(config) {
   localStorage.setItem('domedreaming-config', JSON.stringify(config));
 }
+
+export function saveConfigToFile(config) {
+  const json = JSON.stringify(config, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'domedreaming-config.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export function loadConfigFromFile() {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = async () => {
+      const file = input.files[0];
+      if (!file) return resolve(null);
+      const text = await file.text();
+      try { resolve(JSON.parse(text)); } catch { resolve(null); }
+    };
+    input.click();
+  });
+}
