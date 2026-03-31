@@ -8,7 +8,7 @@ const PRESETS = {
   'Print': { width: 4000, height: 4000 },
 };
 
-export function initGUI(config, onChange) {
+export function initGUI(config, onChange, callbacks = {}) {
   const pane = new Pane({ title: 'Dome Dreaming' });
   pane.registerPlugin(EssentialsPlugin);
 
@@ -40,7 +40,25 @@ export function initGUI(config, onChange) {
 
   // --- Media tab ---
   const mediaPage = tab.pages[2];
-  mediaPage.addBinding(config.media, 'source');
+  mediaPage.addButton({ title: 'Load Image/Video' }).on('click', () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*,video/*';
+    input.onchange = (e) => {
+      const file = e.target.files[0];
+      if (!file && callbacks.onMediaClear) {
+        callbacks.onMediaClear();
+        return;
+      }
+      if (file && callbacks.onMediaLoad) {
+        callbacks.onMediaLoad(file);
+      }
+    };
+    input.click();
+  });
+  mediaPage.addButton({ title: 'Clear Media' }).on('click', () => {
+    if (callbacks.onMediaClear) callbacks.onMediaClear();
+  });
   mediaPage.addBinding(config.media, 'mode', {
     options: { Global: 'global', 'Per-face': 'per-face' },
   });

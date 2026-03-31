@@ -1,9 +1,11 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { generateGeodesic } from './geodesic.js';
+import { computeUVs } from './media.js';
 
 let scene, camera, renderer, controls, container;
 let domeMesh, wireframeMesh;
+let currentTexture = null;
 
 // 20 distinct hues for icosahedron face groups
 const colorPalette = Array.from({ length: 20 }, (_, i) =>
@@ -105,15 +107,26 @@ export function updateDome(options) {
     }
   }
 
+  // Compute UVs for media mapping
+  const uvArray = computeUVs(vertices, faces);
   geometry.setAttribute('position', new THREE.BufferAttribute(positionArray, 3));
   geometry.setAttribute('normal', new THREE.BufferAttribute(normalArray, 3));
   geometry.setAttribute('color', new THREE.BufferAttribute(colorArray, 3));
+  geometry.setAttribute('uv', new THREE.BufferAttribute(uvArray, 2));
 
-  // Solid mesh with vertex colors
-  const solidMaterial = new THREE.MeshStandardMaterial({
-    vertexColors: true,
-    side: THREE.DoubleSide,
-  });
+  // Solid mesh: use texture if available, otherwise vertex colors
+  let solidMaterial;
+  if (currentTexture) {
+    solidMaterial = new THREE.MeshStandardMaterial({
+      map: currentTexture,
+      side: THREE.DoubleSide,
+    });
+  } else {
+    solidMaterial = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      side: THREE.DoubleSide,
+    });
+  }
   domeMesh = new THREE.Mesh(geometry, solidMaterial);
   scene.add(domeMesh);
 
@@ -138,6 +151,24 @@ function onResize() {
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
   renderer.setSize(width, height);
+}
+
+export function setMediaTexture(texture) {
+  currentTexture = texture;
+  if (domeMesh) {
+    domeMesh.material.dispose();
+    if (texture) {
+      domeMesh.material = new THREE.MeshStandardMaterial({
+        map: texture,
+        side: THREE.DoubleSide,
+      });
+    } else {
+      domeMesh.material = new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        side: THREE.DoubleSide,
+      });
+    }
+  }
 }
 
 function animate() {

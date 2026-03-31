@@ -3,11 +3,16 @@
  * Supports pan (mouse drag) and zoom (mouse wheel).
  */
 
+import { drawFaceMedia, computeUVs } from './media.js';
+
 let canvas, ctx, container;
 let transform = { x: 0, y: 0, scale: 1 };
 let isDragging = false;
 let dragStart = { x: 0, y: 0 };
 let lastUnwrapData = null;
+let mediaElement = null;
+let mediaMesh = null;
+let mediaUVs = null;
 
 // 20-color palette matching viewport-3d.js: hue = i/20, sat 65%, light 55%
 const colorPalette = Array.from({ length: 20 }, (_, i) => {
@@ -35,6 +40,22 @@ export function initViewport2D() {
   // Resize
   window.addEventListener('resize', onResize);
   window.addEventListener('split-resize', onResize);
+}
+
+/**
+ * Set media element and mesh data for media-mapped rendering.
+ * @param {HTMLImageElement|HTMLVideoElement|null} element
+ * @param {object|null} mesh - geodesic mesh with vertices and faces
+ */
+export function setMedia(element, mesh) {
+  mediaElement = element;
+  mediaMesh = mesh;
+  if (element && mesh) {
+    mediaUVs = computeUVs(mesh.vertices, mesh.faces);
+  } else {
+    mediaUVs = null;
+  }
+  draw();
 }
 
 export function render2D(unwrapData) {
@@ -66,17 +87,41 @@ function draw() {
     const [[x0, y0], [x1, y1], [x2, y2]] = face.vertices;
     const colorIndex = face.groupId % colorPalette.length;
 
+    // Try media rendering if available
+    let mediaDrawn = false;
+    if (mediaElement && mediaUVs && face.faceIndex != null) {
+      const fi = face.faceIndex;
+      const uvOffset = fi * 3 * 2;
+      const faceUVArray = [
+        [mediaUVs[uvOffset], mediaUVs[uvOffset + 1]],
+        [mediaUVs[uvOffset + 2], mediaUVs[uvOffset + 3]],
+        [mediaUVs[uvOffset + 4], mediaUVs[uvOffset + 5]],
+      ];
+
+      ctx.save();
+      drawFaceMedia(ctx, face.vertices, mediaElement, faceUVArray);
+      ctx.restore();
+      mediaDrawn = true;
+    }
+
+    if (!mediaDrawn) {
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.closePath();
+
+      // Fill
+      ctx.fillStyle = colorPalette[colorIndex];
+      ctx.fill();
+    }
+
+    // Wireframe stroke
     ctx.beginPath();
     ctx.moveTo(x0, y0);
     ctx.lineTo(x1, y1);
     ctx.lineTo(x2, y2);
     ctx.closePath();
-
-    // Fill
-    ctx.fillStyle = colorPalette[colorIndex];
-    ctx.fill();
-
-    // Wireframe stroke
     ctx.strokeStyle = '#222';
     ctx.lineWidth = 0.5 / transform.scale;
     ctx.stroke();
