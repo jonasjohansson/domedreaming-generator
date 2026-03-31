@@ -211,8 +211,9 @@ function layoutPetal(baseFaces, gap, seed) {
 
 function unwrapGenericPatches(vertices, faces, faceGroups, gap, seed) {
   const rand = mulberry32(seed);
+  const MAX_PATCH = 50;
 
-  // Build adjacency
+  // Build adjacency with dihedral angles
   const edgeMap = {};
   for (let fi = 0; fi < faces.length; fi++) {
     const face = faces[fi];
@@ -224,75 +225,187 @@ function unwrapGenericPatches(vertices, faces, faceGroups, gap, seed) {
     }
   }
 
-  const adj = Array.from({ length: faces.length }, () => []);
+  // Compute face normals
+  const normals = faces.map(([ai, bi, ci]) => {
+    const a = vertices[ai], b = vertices[bi], c = vertices[ci];
+    const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+    const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
+    return len > 0 ? [nx / len, ny / len, nz / len] : [0, 1, 0];
+  });
+
+  // Collect shared edges with dihedral angles
+  const sharedEdges = [];
   for (const key of Object.keys(edgeMap)) {
     const fis = edgeMap[key];
     if (fis.length === 2) {
       const [v0, v1] = key.split(',').map(Number);
-      adj[fis[0]].push({ neighbor: fis[1], sharedEdge: [v0, v1] });
-      adj[fis[1]].push({ neighbor: fis[0], sharedEdge: [v0, v1] });
+      const n1 = normals[fis[0]], n2 = normals[fis[1]];
+      const dot = n1[0] * n2[0] + n1[1] * n2[1] + n1[2] * n2[2];
+      const angle = Math.acos(Math.max(-1, Math.min(1, dot))); // 0 = coplanar
+      sharedEdges.push({ f1: fis[0], f2: fis[1], edge: [v0, v1], angle });
     }
   }
 
-  // Full BFS edge-unfolding — one connected piece (overlaps are OK, it's the aesthetic)
-  const faces2D = [];
-  const globalVisited = new Set();
+  // Sort by angle: flattest first (greedy merge for flat regions)
+  sharedEdges.sort((a, b) => a.angle - b.angle);
 
-  // Pick a seed-based starting face
-  const startFace = Math.floor(rand() * faces.length);
-  const queue = [startFace];
-  globalVisited.add(startFace);
-  const placed = {};
+  // Union-Find to group faces into patches
+  const parent = Array.from({ length: faces.length }, (_, i) => i);
+  const patchSize = new Array(faces.length).fill(1);
 
-  // Place root
-  const [ai, bi, ci] = faces[startFace];
-  const a = vertices[ai], b = vertices[bi], c = vertices[ci];
-  const dAB = dist3(a, b), dAC = dist3(a, c), dBC = dist3(b, c);
-  if (dAB > 1e-10) {
+  function find(x) {
+    while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+    return x;
+  }
+  function union(a, b) {
+    a = find(a); b = find(b);
+    if (a === b) return false;
+    if (patchSize[a] < patchSize[b]) [a, b] = [b, a];
+    parent[b] = a;
+    patchSize[a] += patchSize[b];
+    return true;
+  }
+
+  // Merge faces across flat edges, respecting max patch size
+  // Add some seed-based randomness: occasionally skip a flat edge
+  const mergedEdges = new Set();
+  for (const se of sharedEdges) {
+    const ra = find(se.f1), rb = find(se.f2);
+    if (ra === rb) continue;
+    if (patchSize[ra] + patchSize[rb] > MAX_PATCH) continue;
+    // Small chance to skip (seed variety) — but only for non-trivial angles
+    if (se.angle > 0.3 && rand() < 0.15) continue;
+    union(se.f1, se.f2);
+    mergedEdges.add(se.f1 + ',' + se.f2);
+    mergedEdges.add(se.f2 + ',' + se.f1);
+  }
+
+  // Group faces by patch root
+  const patchGroups = {};
+  for (let fi = 0; fi < faces.length; fi++) {
+    const root = find(fi);
+    if (!patchGroups[root]) patchGroups[root] = [];
+    patchGroups[root].push(fi);
+  }
+
+  // Build per-patch adjacency (only merged edges)
+  const adj = Array.from({ length: faces.length }, () => []);
+  for (const se of sharedEdges) {
+    const key1 = se.f1 + ',' + se.f2;
+    if (mergedEdges.has(key1)) {
+      adj[se.f1].push({ neighbor: se.f2, sharedEdge: se.edge });
+      adj[se.f2].push({ neighbor: se.f1, sharedEdge: se.edge });
+    }
+  }
+
+  // Unfold each patch via BFS and arrange
+  const patches = [];
+  for (const root of Object.keys(patchGroups)) {
+    const group = patchGroups[root];
+    const patchFaces = new Set(group);
+    const start = group[Math.floor(rand() * group.length)];
+
+    const placed = {};
+    const queue = [start];
+    const visited = new Set([start]);
+    const patch = [];
+
+    // Place root face
+    const [ai, bi, ci] = faces[start];
+    const a = vertices[ai], b = vertices[bi], c = vertices[ci];
+    const dAB = dist3(a, b), dAC = dist3(a, c), dBC = dist3(b, c);
+    if (dAB < 1e-10) continue;
     const px = (dAB * dAB + dAC * dAC - dBC * dBC) / (2 * dAB);
     const py = Math.sqrt(Math.max(0, dAC * dAC - px * px));
-    placed[startFace] = {
+    placed[start] = {
       corners: [[0, 0], [dAB, 0], [px, py]],
       vm: { [ai]: [0, 0], [bi]: [dAB, 0], [ci]: [px, py] },
     };
-    faces2D.push({ vertices: placed[startFace].corners, groupId: faceGroups[startFace], faceIndex: startFace });
-  }
+    patch.push({ corners: placed[start].corners, faceIndex: start, groupId: faceGroups[start] });
 
-  while (queue.length > 0) {
-    const current = queue.shift();
-    if (!placed[current]) continue;
-    const currentVm = placed[current].vm;
-    const currentFace = faces[current];
-    const neighbors = shuffleArray(adj[current], rand);
+    while (queue.length > 0) {
+      const current = queue.shift();
+      const currentVm = placed[current].vm;
+      const currentFace = faces[current];
 
-    for (const { neighbor, sharedEdge } of neighbors) {
-      if (globalVisited.has(neighbor)) continue;
-      globalVisited.add(neighbor);
-      queue.push(neighbor);
+      for (const { neighbor, sharedEdge } of adj[current]) {
+        if (visited.has(neighbor) || !patchFaces.has(neighbor)) continue;
+        visited.add(neighbor);
+        queue.push(neighbor);
 
-      const [sv0, sv1] = sharedEdge;
-      const currentThird = currentFace.find(v => v !== sv0 && v !== sv1);
-      const reflected = reflectAcrossLine(currentVm[currentThird], currentVm[sv0], currentVm[sv1]);
-      const neighborFace = faces[neighbor];
-      const neighborThird = neighborFace.find(v => v !== sv0 && v !== sv1);
-      const vm = { [sv0]: currentVm[sv0], [sv1]: currentVm[sv1], [neighborThird]: reflected };
-      const corners = neighborFace.map(v => vm[v]);
-      placed[neighbor] = { corners, vm };
-      faces2D.push({ vertices: corners, groupId: faceGroups[neighbor], faceIndex: neighbor });
+        const [sv0, sv1] = sharedEdge;
+        const currentThird = currentFace.find(v => v !== sv0 && v !== sv1);
+        const reflected = reflectAcrossLine(currentVm[currentThird], currentVm[sv0], currentVm[sv1]);
+        const neighborFace = faces[neighbor];
+        const neighborThird = neighborFace.find(v => v !== sv0 && v !== sv1);
+        const vm = { [sv0]: currentVm[sv0], [sv1]: currentVm[sv1], [neighborThird]: reflected };
+        const corners = neighborFace.map(v => vm[v]);
+        placed[neighbor] = { corners, vm };
+        patch.push({ corners, faceIndex: neighbor, groupId: faceGroups[neighbor] });
+      }
     }
+
+    // Any faces in group not reached (disconnected within patch)
+    for (const fi of group) {
+      if (visited.has(fi)) continue;
+      const [a2, b2, c2] = faces[fi];
+      const va = vertices[a2], vb = vertices[b2], vc = vertices[c2];
+      const d1 = dist3(va, vb), d2 = dist3(va, vc), d3 = dist3(vb, vc);
+      if (d1 < 1e-10) continue;
+      const cpx = (d1 * d1 + d2 * d2 - d3 * d3) / (2 * d1);
+      const cpy = Math.sqrt(Math.max(0, d2 * d2 - cpx * cpx));
+      patch.push({ corners: [[0, 0], [d1, 0], [cpx, cpy]], faceIndex: fi, groupId: faceGroups[fi] });
+    }
+
+    if (patch.length > 0) patches.push(patch);
   }
 
-  // Handle any disconnected components
-  for (let fi = 0; fi < faces.length; fi++) {
-    if (globalVisited.has(fi)) continue;
-    globalVisited.add(fi);
-    const [a2, b2, c2] = faces[fi];
-    const va = vertices[a2], vb = vertices[b2], vc = vertices[c2];
-    const d1 = dist3(va, vb), d2 = dist3(va, vc), d3 = dist3(vb, vc);
-    if (d1 < 1e-10) continue;
-    const cpx = (d1 * d1 + d2 * d2 - d3 * d3) / (2 * d1);
-    const cpy = Math.sqrt(Math.max(0, d2 * d2 - cpx * cpx));
-    faces2D.push({ vertices: [[0, 0], [d1, 0], [cpx, cpy]], groupId: faceGroups[fi], faceIndex: fi });
+  // Sort patches largest first for better packing
+  patches.sort((a, b) => b.length - a.length);
+
+  // Compute patch bounding boxes and arrange in rows
+  const patchBounds = patches.map(patch => {
+    let mnX = Infinity, mnY = Infinity, mxX = -Infinity, mxY = -Infinity;
+    for (const f of patch) {
+      for (const [x, y] of f.corners) {
+        mnX = Math.min(mnX, x); mnY = Math.min(mnY, y);
+        mxX = Math.max(mxX, x); mxY = Math.max(mxY, y);
+      }
+    }
+    return { minX: mnX, minY: mnY, width: mxX - mnX, height: mxY - mnY };
+  });
+
+  const faces2D = [];
+  let rowX = 0, rowY = 0, rowMaxH = 0;
+  const totalArea = patchBounds.reduce((s, b) => s + b.width * b.height, 0);
+  const targetRowWidth = Math.sqrt(totalArea) * 1.4;
+
+  for (let pi = 0; pi < patches.length; pi++) {
+    const patch = patches[pi];
+    const bounds = patchBounds[pi];
+    const spacing = Math.max(bounds.width, bounds.height) * 0.05 + gap * 0.2;
+
+    if (rowX + bounds.width > targetRowWidth && rowX > 0) {
+      rowY += rowMaxH + spacing;
+      rowX = 0;
+      rowMaxH = 0;
+    }
+
+    const offsetX = rowX - bounds.minX;
+    const offsetY = rowY - bounds.minY;
+
+    for (const f of patch) {
+      faces2D.push({
+        vertices: f.corners.map(([x, y]) => [x + offsetX, y + offsetY]),
+        groupId: f.groupId,
+        faceIndex: f.faceIndex,
+      });
+    }
+
+    rowX += bounds.width + spacing;
+    rowMaxH = Math.max(rowMaxH, bounds.height);
   }
 
   return faces2D;
