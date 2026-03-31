@@ -7,16 +7,16 @@
  */
 export function unwrapMesh(options) {
   const {
-    mesh, layout = 'flower', gap = 0.1, clusterRotation = 0,
+    mesh, layout = 'flower', clusterRotation = 0,
     isGeodesic = true, seed = 1,
   } = options || {};
   const { vertices, faces, faceGroups } = mesh;
 
   let faces2D;
   if (isGeodesic) {
-    faces2D = unwrapGeodesic(vertices, faces, faceGroups, layout, gap, seed);
+    faces2D = unwrapGeodesic(vertices, faces, faceGroups, layout, seed);
   } else {
-    faces2D = unwrapGenericPatches(vertices, faces, faceGroups, gap, seed);
+    faces2D = unwrapGenericPatches(vertices, faces, faceGroups, seed);
   }
 
   // Apply overall rotation
@@ -77,7 +77,7 @@ function centroidOf(faces2D) {
 // Geodesic unwrap
 // ============================================================
 
-function unwrapGeodesic(vertices, faces, faceGroups, layout, gap, seed) {
+function unwrapGeodesic(vertices, faces, faceGroups, layout, seed) {
   const baseFaces = [
     [0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11],
     [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8],
@@ -99,14 +99,14 @@ function unwrapGeodesic(vertices, faces, faceGroups, layout, gap, seed) {
   let parentTriangles;
   switch (layout) {
     case 'strip':
-      parentTriangles = layoutStrip(gap);
+      parentTriangles = layoutStrip();
       break;
     case 'cross':
-      parentTriangles = layoutCross(gap);
+      parentTriangles = layoutCross();
       break;
     case 'flower':
     default:
-      parentTriangles = layoutPetal(baseFaces, gap, seed);
+      parentTriangles = layoutPetal(baseFaces, seed);
       break;
   }
 
@@ -135,7 +135,7 @@ function unwrapGeodesic(vertices, faces, faceGroups, layout, gap, seed) {
 // 1. Starting rotation angle
 // 2. BFS neighbor order for outer faces (different net shapes)
 
-function layoutPetal(baseFaces, gap, seed) {
+function layoutPetal(baseFaces, seed) {
   const rand = mulberry32(seed);
   const adjacency = buildAdjacency(baseFaces);
   const sideLen = 1;
@@ -200,7 +200,7 @@ function layoutPetal(baseFaces, gap, seed) {
 
   const result = {};
   for (const fi of Object.keys(placed)) {
-    result[fi] = gap > 0 ? shrinkTriangle(placed[fi].corners, gap) : [...placed[fi].corners];
+    result[fi] = [...placed[fi].corners];
   }
   return result;
 }
@@ -209,7 +209,7 @@ function layoutPetal(baseFaces, gap, seed) {
 // Generic unwrap: patch-based BFS edge-unfolding
 // ============================================================
 
-function unwrapGenericPatches(vertices, faces, faceGroups, gap, seed) {
+function unwrapGenericPatches(vertices, faces, faceGroups, seed) {
   const rand = mulberry32(seed);
   const MAX_PATCH = 50;
 
@@ -385,7 +385,7 @@ function unwrapGenericPatches(vertices, faces, faceGroups, gap, seed) {
   for (let pi = 0; pi < patches.length; pi++) {
     const patch = patches[pi];
     const bounds = patchBounds[pi];
-    const spacing = Math.max(bounds.width, bounds.height) * 0.05 + gap * 0.2;
+    const spacing = Math.max(bounds.width, bounds.height) * 0.05;
 
     if (rowX + bounds.width > targetRowWidth && rowX > 0) {
       rowY += rowMaxH + spacing;
@@ -476,21 +476,21 @@ function shrinkTriangle(corners, amount) {
 
 // --- Layout: Strip ---
 
-function layoutStrip(gap) {
+function layoutStrip() {
   const sideLen = 1, h = sideLen * Math.sqrt(3) / 2, result = {};
   for (let i = 0; i < 20; i++) {
     const pair = Math.floor(i / 2), isDown = i % 2 === 1;
     const corners = isDown
       ? [[(pair + 0.5) * sideLen, h], [(pair + 1) * sideLen, 0], [(pair + 1.5) * sideLen, h]]
       : [[pair * sideLen, 0], [(pair + 1) * sideLen, 0], [(pair + 0.5) * sideLen, h]];
-    result[i] = gap > 0 ? shrinkTriangle(corners, gap) : corners;
+    result[i] = corners;
   }
   return result;
 }
 
 // --- Layout: Cross ---
 
-function layoutCross(gap) {
+function layoutCross() {
   const sideLen = 1, h = sideLen * Math.sqrt(3) / 2, result = {}, step = sideLen * 1.2;
   const dirs = [[1, 0], [0, -1], [-1, 0], [0, 1]];
   for (let arm = 0; arm < 4; arm++) {
@@ -498,7 +498,7 @@ function layoutCross(gap) {
     for (let i = 0; i < 5; i++) {
       const gi = arm * 5 + i, d = (i + 1) * step, cx = dx * d, cy = dy * d;
       const corners = [[cx - sideLen / 2, cy - h / 3], [cx + sideLen / 2, cy - h / 3], [cx, cy + 2 * h / 3]];
-      result[gi] = gap > 0 ? shrinkTriangle(corners, gap) : corners;
+      result[gi] = corners;
     }
   }
   return result;

@@ -14,17 +14,16 @@ export function initGUI(config, onChange, callbacks = {}) {
 
   const tab = pane.addTab({
     pages: [
-      { title: 'Geometry' },
-      { title: 'Unwrap' },
+      { title: 'Shape' },
       { title: 'Media' },
       { title: 'Export' },
       { title: 'Config' },
     ],
   });
 
-  // --- Geometry tab ---
-  const geometryPage = tab.pages[0];
-  geometryPage.addButton({ title: 'Load 3D Model (GLB/FBX/OBJ)' }).on('click', () => {
+  // --- Shape tab (Geometry + Unwrap) ---
+  const shapePage = tab.pages[0];
+  shapePage.addButton({ title: 'Load 3D Model (GLB/FBX/OBJ)' }).on('click', () => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.glb,.gltf,.fbx,.obj';
@@ -34,26 +33,26 @@ export function initGUI(config, onChange, callbacks = {}) {
     };
     input.click();
   });
-  geometryPage.addButton({ title: 'Reset to Geodesic' }).on('click', () => {
+  shapePage.addButton({ title: 'Reset to Geodesic' }).on('click', () => {
     if (callbacks.onModelClear) callbacks.onModelClear();
   });
-  geometryPage.addBinding(config.geometry, 'frequency', { min: 1, max: 6, step: 1 });
-  geometryPage.addBinding(config.geometry, 'radius', { min: 0.1, max: 5 });
-  geometryPage.addBinding(config.geometry, 'hemisphere');
-  geometryPage.addBinding(config.geometry, 'truncation', { min: 0, max: 1 });
-  geometryPage.addBinding(config.geometry, 'rotation', { min: 0, max: Math.PI * 2 });
 
-  // --- Unwrap tab ---
-  const unwrapPage = tab.pages[1];
-  unwrapPage.addBinding(config.unwrap, 'layout', {
+  const geoFolder = shapePage.addFolder({ title: 'Geodesic', expanded: true });
+  geoFolder.addBinding(config.geometry, 'frequency', { min: 1, max: 6, step: 1 });
+  geoFolder.addBinding(config.geometry, 'radius', { min: 0.1, max: 5 });
+  geoFolder.addBinding(config.geometry, 'hemisphere');
+  geoFolder.addBinding(config.geometry, 'truncation', { min: 0, max: 1 });
+  geoFolder.addBinding(config.geometry, 'rotation', { min: 0, max: Math.PI * 2 });
+
+  const unwrapFolder = shapePage.addFolder({ title: 'Unwrap', expanded: true });
+  unwrapFolder.addBinding(config.unwrap, 'layout', {
     options: { Flower: 'flower', Strip: 'strip', Cross: 'cross' },
   });
-  unwrapPage.addBinding(config.unwrap, 'gap', { min: 0, max: 1 });
-  unwrapPage.addBinding(config.unwrap, 'clusterRotation', { min: 0, max: Math.PI * 2 });
-  unwrapPage.addBinding(config.unwrap, 'seed', { min: 1, max: 999, step: 1, label: 'net variant' });
+  unwrapFolder.addBinding(config.unwrap, 'clusterRotation', { min: 0, max: Math.PI * 2 });
+  unwrapFolder.addBinding(config.unwrap, 'seed', { min: 1, max: 999, step: 1, label: 'net variant' });
 
   // --- Media tab ---
-  const mediaPage = tab.pages[2];
+  const mediaPage = tab.pages[1];
   mediaPage.addButton({ title: 'Load Image/Video' }).on('click', () => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -78,7 +77,7 @@ export function initGUI(config, onChange, callbacks = {}) {
   });
 
   // --- Export tab ---
-  const exportPage = tab.pages[3];
+  const exportPage = tab.pages[2];
   const widthBinding = exportPage.addBinding(config.export, 'width', { min: 100, max: 8000, step: 1 });
   const heightBinding = exportPage.addBinding(config.export, 'height', { min: 100, max: 8000, step: 1 });
   exportPage.addBinding(config.export, 'preset', {
@@ -98,7 +97,7 @@ export function initGUI(config, onChange, callbacks = {}) {
   });
 
   // --- Config tab ---
-  const configPage = tab.pages[4];
+  const configPage = tab.pages[3];
   configPage.addButton({ title: 'Save Config' }).on('click', () => {
     saveConfigToFile(config);
   });

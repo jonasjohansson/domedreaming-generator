@@ -8,7 +8,6 @@ export const defaultConfig = {
   },
   unwrap: {
     layout: 'flower',
-    gap: 0.1,
     clusterRotation: 0,
     seed: 1,
   },
