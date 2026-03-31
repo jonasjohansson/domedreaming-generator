@@ -182,7 +182,9 @@ export function drawFaceMedia(ctx, face2DVertices, mediaElement, faceUVs) {
   const d = ((y1 - y2) * (sx0 - sx2) - (y0 - y2) * (sx1 - sx2)) * invDet;
   const f = y0 - b * sx0 - d * sy0;
 
-  ctx.setTransform(a, b, c, d, e, f);
+  // Use transform() (not setTransform) to compose with the current
+  // canvas transform (DPR + pan/zoom), so media draws in screen space.
+  ctx.transform(a, b, c, d, e, f);
 
   // Draw the media - use a region large enough to cover any UV wrapping
   // For wrapped UVs (u > 1), we may need to draw the image multiple times

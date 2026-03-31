@@ -17,59 +17,17 @@ export function unwrapMesh(options) {
   const { mesh, layout = 'flower', gap = 0.1, clusterRotation = 0 } = options || {};
   const { vertices, faces, faceGroups } = mesh;
 
-  // Icosahedron base faces — must match geodesic.js exactly
-  const baseFaces = [
-    [0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11],
-    [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8],
-    [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9],
-    [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1],
-  ];
+  // Detect if this is a geodesic mesh (exactly 20 base groups with perfect square face counts)
+  // or an arbitrary mesh (from loaded 3D model)
+  const groupSet = new Set(faceGroups);
+  const numGroups = groupSet.size;
+  const isGeodesic = numGroups <= 20 && isGeodesicMesh(faceGroups, numGroups);
 
-  // Group faces by their icosahedron parent
-  const facesByGroup = {};
-  for (let i = 0; i < faces.length; i++) {
-    const g = faceGroups[i];
-    if (!facesByGroup[g]) facesByGroup[g] = [];
-    facesByGroup[g].push(i);
-  }
-
-  // Determine subdivision frequency from faces-per-group
-  const firstGroupId = Number(Object.keys(facesByGroup)[0]);
-  const facesPerGroup = facesByGroup[firstGroupId].length;
-  const frequency = Math.round(Math.sqrt(facesPerGroup));
-
-  // Compute parent triangle 2D positions based on layout
-  let parentTriangles;
-  switch (layout) {
-    case 'strip':
-      parentTriangles = layoutStrip(gap);
-      break;
-    case 'cross':
-      parentTriangles = layoutCross(gap);
-      break;
-    case 'flower':
-    default:
-      parentTriangles = layoutFlower(baseFaces, gap);
-      break;
-  }
-
-  // Build 2D faces by subdividing each parent triangle with barycentric grid
-  const faces2D = [];
-  for (const gStr of Object.keys(facesByGroup)) {
-    const g = Number(gStr);
-    if (!parentTriangles[g]) continue;
-
-    const [p0, p1, p2] = parentTriangles[g];
-    const subTris = subdivideTriangle2D(p0, p1, p2, frequency);
-    const groupFaceIndices = facesByGroup[g];
-
-    for (let i = 0; i < groupFaceIndices.length && i < subTris.length; i++) {
-      faces2D.push({
-        vertices: subTris[i],
-        groupId: g,
-        faceIndex: groupFaceIndices[i],
-      });
-    }
+  let faces2D;
+  if (isGeodesic) {
+    faces2D = unwrapGeodesic(vertices, faces, faceGroups, layout, gap);
+  } else {
+    faces2D = unwrapGeneric(vertices, faces, faceGroups, gap);
   }
 
   // Apply overall rotation
@@ -104,6 +62,176 @@ export function unwrapMesh(options) {
     faces2D,
     bounds: { width: maxX - minX, height: maxY - minY, minX, minY },
   };
+}
+
+// --- Geodesic detection ---
+
+function isGeodesicMesh(faceGroups, numGroups) {
+  if (numGroups > 20) return false;
+  const counts = {};
+  for (const g of faceGroups) {
+    counts[g] = (counts[g] || 0) + 1;
+  }
+  const vals = Object.values(counts);
+  const first = vals[0];
+  // All groups should have the same count (freq²) and it should be a perfect square
+  const allSame = vals.every(v => v === first);
+  const sqrt = Math.sqrt(first);
+  return allSame && Math.round(sqrt) * Math.round(sqrt) === first;
+}
+
+// --- Geodesic unwrap (icosahedron net with barycentric subdivision) ---
+
+function unwrapGeodesic(vertices, faces, faceGroups, layout, gap) {
+  const baseFaces = [
+    [0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11],
+    [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8],
+    [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9],
+    [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1],
+  ];
+
+  const facesByGroup = {};
+  for (let i = 0; i < faces.length; i++) {
+    const g = faceGroups[i];
+    if (!facesByGroup[g]) facesByGroup[g] = [];
+    facesByGroup[g].push(i);
+  }
+
+  const firstGroupId = Number(Object.keys(facesByGroup)[0]);
+  const facesPerGroup = facesByGroup[firstGroupId].length;
+  const frequency = Math.round(Math.sqrt(facesPerGroup));
+
+  let parentTriangles;
+  switch (layout) {
+    case 'strip':
+      parentTriangles = layoutStrip(gap);
+      break;
+    case 'cross':
+      parentTriangles = layoutCross(gap);
+      break;
+    case 'flower':
+    default:
+      parentTriangles = layoutFlower(baseFaces, gap);
+      break;
+  }
+
+  const faces2D = [];
+  for (const gStr of Object.keys(facesByGroup)) {
+    const g = Number(gStr);
+    if (!parentTriangles[g]) continue;
+
+    const [p0, p1, p2] = parentTriangles[g];
+    const subTris = subdivideTriangle2D(p0, p1, p2, frequency);
+    const groupFaceIndices = facesByGroup[g];
+
+    for (let i = 0; i < groupFaceIndices.length && i < subTris.length; i++) {
+      faces2D.push({
+        vertices: subTris[i],
+        groupId: g,
+        faceIndex: groupFaceIndices[i],
+      });
+    }
+  }
+  return faces2D;
+}
+
+// --- Generic unwrap (BFS edge-based unfolding for arbitrary meshes) ---
+
+function unwrapGeneric(vertices, faces, faceGroups, gap) {
+  // Build face adjacency from the actual mesh
+  const edgeMap = {};
+  for (let fi = 0; fi < faces.length; fi++) {
+    const face = faces[fi];
+    for (let e = 0; e < 3; e++) {
+      const v0 = face[e];
+      const v1 = face[(e + 1) % 3];
+      const key = Math.min(v0, v1) + ',' + Math.max(v0, v1);
+      if (!edgeMap[key]) edgeMap[key] = [];
+      edgeMap[key].push(fi);
+    }
+  }
+
+  const adj = Array.from({ length: faces.length }, () => []);
+  for (const key of Object.keys(edgeMap)) {
+    const fis = edgeMap[key];
+    if (fis.length === 2) {
+      const [v0, v1] = key.split(',').map(Number);
+      adj[fis[0]].push({ neighbor: fis[1], sharedEdge: [v0, v1] });
+      adj[fis[1]].push({ neighbor: fis[0], sharedEdge: [v0, v1] });
+    }
+  }
+
+  // BFS unfolding from face 0
+  const placed = {};
+  const root = 0;
+  const [ai, bi, ci] = faces[root];
+  const a = vertices[ai], b = vertices[bi], c = vertices[ci];
+
+  // Flatten root triangle preserving edge lengths
+  const dAB = dist3(a, b);
+  const dAC = dist3(a, c);
+  const dBC = dist3(b, c);
+
+  const p0 = [0, 0];
+  const p1 = [dAB, 0];
+  const cxPos = (dAB * dAB + dAC * dAC - dBC * dBC) / (2 * dAB);
+  const cyPos = Math.sqrt(Math.max(0, dAC * dAC - cxPos * cxPos));
+  const p2 = [cxPos, cyPos];
+
+  placed[root] = {
+    corners: [p0, p1, p2],
+    vm: { [ai]: p0, [bi]: p1, [ci]: p2 },
+  };
+
+  const queue = [root];
+  const visited = new Set([root]);
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    const currentVm = placed[current].vm;
+    const currentFace = faces[current];
+
+    for (const { neighbor, sharedEdge } of adj[current]) {
+      if (visited.has(neighbor)) continue;
+      visited.add(neighbor);
+      queue.push(neighbor);
+
+      const [sv0, sv1] = sharedEdge;
+      const edgeP0 = currentVm[sv0];
+      const edgeP1 = currentVm[sv1];
+
+      const currentThird = currentFace.find(v => v !== sv0 && v !== sv1);
+      const currentThirdP = currentVm[currentThird];
+
+      const neighborFace = faces[neighbor];
+      const neighborThird = neighborFace.find(v => v !== sv0 && v !== sv1);
+
+      const reflected = reflectAcrossLine(currentThirdP, edgeP0, edgeP1);
+
+      const vm = { [sv0]: edgeP0, [sv1]: edgeP1, [neighborThird]: reflected };
+      const corners = neighborFace.map(v => vm[v]);
+      placed[neighbor] = { corners, vm };
+    }
+  }
+
+  // Build faces2D with optional gap
+  const faces2D = [];
+  for (let fi = 0; fi < faces.length; fi++) {
+    if (!placed[fi]) continue;
+    let corners = placed[fi].corners;
+    if (gap > 0) corners = shrinkTriangle(corners, gap);
+    faces2D.push({
+      vertices: corners,
+      groupId: faceGroups[fi],
+      faceIndex: fi,
+    });
+  }
+  return faces2D;
+}
+
+function dist3(a, b) {
+  const dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2];
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
 
 // --- Barycentric subdivision of a 2D triangle ---

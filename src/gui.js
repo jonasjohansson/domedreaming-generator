@@ -24,6 +24,19 @@ export function initGUI(config, onChange, callbacks = {}) {
 
   // --- Geometry tab ---
   const geometryPage = tab.pages[0];
+  geometryPage.addButton({ title: 'Load 3D Model (GLB/FBX/OBJ)' }).on('click', () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.glb,.gltf,.fbx,.obj';
+    input.onchange = (e) => {
+      const file = e.target.files[0];
+      if (file && callbacks.onModelLoad) callbacks.onModelLoad(file);
+    };
+    input.click();
+  });
+  geometryPage.addButton({ title: 'Reset to Geodesic' }).on('click', () => {
+    if (callbacks.onModelClear) callbacks.onModelClear();
+  });
   geometryPage.addBinding(config.geometry, 'frequency', { min: 1, max: 6, step: 1 });
   geometryPage.addBinding(config.geometry, 'radius', { min: 0.1, max: 5 });
   geometryPage.addBinding(config.geometry, 'hemisphere');

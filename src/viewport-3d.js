@@ -144,6 +144,75 @@ export function getScene() {
   return scene;
 }
 
+/**
+ * Display a custom mesh (from loaded 3D model) in the viewport.
+ * @param {{ vertices: number[][], faces: number[][], normals: number[][], faceGroups: number[] }} meshData
+ */
+export function setCustomMesh(meshData) {
+  // Remove old meshes
+  if (domeMesh) {
+    scene.remove(domeMesh);
+    domeMesh.geometry.dispose();
+    domeMesh.material.dispose();
+    domeMesh = null;
+  }
+  if (wireframeMesh) {
+    scene.remove(wireframeMesh);
+    wireframeMesh.geometry.dispose();
+    wireframeMesh.material.dispose();
+    wireframeMesh = null;
+  }
+
+  const { vertices, faces, normals, faceGroups } = meshData;
+  const numGroups = new Set(faceGroups).size;
+  const palette = Array.from({ length: Math.max(numGroups, 20) }, (_, i) =>
+    new THREE.Color().setHSL(i / Math.max(numGroups, 20), 0.65, 0.55)
+  );
+
+  const geometry = new THREE.BufferGeometry();
+  const positionArray = new Float32Array(faces.length * 3 * 3);
+  const normalArray = new Float32Array(faces.length * 3 * 3);
+  const colorArray = new Float32Array(faces.length * 3 * 3);
+
+  for (let fi = 0; fi < faces.length; fi++) {
+    const groupIndex = faceGroups[fi] % palette.length;
+    const color = palette[groupIndex];
+
+    for (let vi = 0; vi < 3; vi++) {
+      const vertIdx = faces[fi][vi];
+      const offset = (fi * 3 + vi) * 3;
+
+      positionArray[offset] = vertices[vertIdx][0];
+      positionArray[offset + 1] = vertices[vertIdx][1];
+      positionArray[offset + 2] = vertices[vertIdx][2];
+
+      normalArray[offset] = normals[vertIdx][0];
+      normalArray[offset + 1] = normals[vertIdx][1];
+      normalArray[offset + 2] = normals[vertIdx][2];
+
+      colorArray[offset] = color.r;
+      colorArray[offset + 1] = color.g;
+      colorArray[offset + 2] = color.b;
+    }
+  }
+
+  geometry.setAttribute('position', new THREE.BufferAttribute(positionArray, 3));
+  geometry.setAttribute('normal', new THREE.BufferAttribute(normalArray, 3));
+  geometry.setAttribute('color', new THREE.BufferAttribute(colorArray, 3));
+
+  const material = currentTexture
+    ? new THREE.MeshStandardMaterial({ map: currentTexture, side: THREE.DoubleSide })
+    : new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide });
+
+  domeMesh = new THREE.Mesh(geometry, material);
+  scene.add(domeMesh);
+
+  const wireGeometry = new THREE.WireframeGeometry(geometry);
+  const wireMaterial = new THREE.LineBasicMaterial({ color: 0x111111, linewidth: 1 });
+  wireframeMesh = new THREE.LineSegments(wireGeometry, wireMaterial);
+  scene.add(wireframeMesh);
+}
+
 function onResize() {
   if (!container || !camera || !renderer) return;
   const width = container.clientWidth;

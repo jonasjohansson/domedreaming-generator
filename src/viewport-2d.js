@@ -13,6 +13,7 @@ let lastUnwrapData = null;
 let mediaElement = null;
 let mediaMesh = null;
 let mediaUVs = null;
+let videoAnimFrameId = null;
 
 // 20-color palette matching viewport-3d.js: hue = i/20, sat 65%, light 55%
 const colorPalette = Array.from({ length: 20 }, (_, i) => {
@@ -55,7 +56,21 @@ export function setMedia(element, mesh) {
   } else {
     mediaUVs = null;
   }
-  draw();
+
+  // Start/stop video render loop
+  if (videoAnimFrameId) {
+    cancelAnimationFrame(videoAnimFrameId);
+    videoAnimFrameId = null;
+  }
+  if (element && element.tagName === 'VIDEO') {
+    function videoLoop() {
+      draw();
+      videoAnimFrameId = requestAnimationFrame(videoLoop);
+    }
+    videoLoop();
+  } else {
+    draw();
+  }
 }
 
 export function render2D(unwrapData) {
