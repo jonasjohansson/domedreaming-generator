@@ -1,5 +1,5 @@
 import { initSplitView } from './split-view.js';
-import { initViewport3D } from './viewport-3d.js';
+import { initViewport3D, updateDome } from './viewport-3d.js';
 
 initSplitView();
 initViewport3D();
