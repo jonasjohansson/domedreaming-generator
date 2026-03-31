@@ -19,11 +19,14 @@ export function unwrapMesh(options) {
   const frequency = Math.round(Math.sqrt(facesPerGroup));
 
   let faces2D;
-  if (!isGeodesic || layout === 'freeform') {
-    faces2D = unwrapConnected(vertices, faces, faceGroups, seed);
-  } else if (frequency > 1) {
+  if (layout === 'islands') {
+    // Pepakura-style: separate connected patches, no overlaps
+    faces2D = unwrapGenericPatches(vertices, faces, faceGroups, seed);
+  } else if (layout === 'connected' || !isGeodesic || (isGeodesic && frequency > 1)) {
+    // One connected piece, cuts at sharp creases
     faces2D = unwrapConnected(vertices, faces, faceGroups, seed);
   } else {
+    // Classic geodesic layouts (flower/strip/cross) for freq 1
     faces2D = unwrapGeodesic(vertices, faces, faceGroups, layout, seed);
   }
 
@@ -223,7 +226,7 @@ function layoutPetal(baseFaces, seed) {
 function unwrapConnected(vertices, faces, faceGroups, seed) {
   const rand = mulberry32(seed);
 
-  // Build adjacency
+  // Build adjacency with dihedral angles
   const edgeMap = {};
   for (let fi = 0; fi < faces.length; fi++) {
     const face = faces[fi];
@@ -235,22 +238,39 @@ function unwrapConnected(vertices, faces, faceGroups, seed) {
     }
   }
 
+  // Compute face normals
+  const normals = faces.map(([ai, bi, ci]) => {
+    const a = vertices[ai], b = vertices[bi], c = vertices[ci];
+    const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+    const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
+    return len > 0 ? [nx / len, ny / len, nz / len] : [0, 1, 0];
+  });
+
+  // Build adjacency with dihedral angle per edge
   const adj = Array.from({ length: faces.length }, () => []);
   for (const key of Object.keys(edgeMap)) {
     const fis = edgeMap[key];
     if (fis.length === 2) {
       const [v0, v1] = key.split(',').map(Number);
-      adj[fis[0]].push({ neighbor: fis[1], sharedEdge: [v0, v1] });
-      adj[fis[1]].push({ neighbor: fis[0], sharedEdge: [v0, v1] });
+      const n1 = normals[fis[0]], n2 = normals[fis[1]];
+      const dot = n1[0] * n2[0] + n1[1] * n2[1] + n1[2] * n2[2];
+      const angle = Math.acos(Math.max(-1, Math.min(1, dot)));
+      adj[fis[0]].push({ neighbor: fis[1], sharedEdge: [v0, v1], angle });
+      adj[fis[1]].push({ neighbor: fis[0], sharedEdge: [v0, v1], angle });
     }
   }
 
-  // Pick seed-based starting face
+  // BFS unfolding — skip edges at sharp creases (high dihedral angle)
+  // This keeps one main connected piece but trims spiky branches
+  const CREASE_THRESHOLD = 0.6; // ~34° — edges sharper than this get cut
   const startFace = Math.floor(rand() * faces.length);
   const placed = {};
   const visited = new Set([startFace]);
   const queue = [startFace];
   const faces2D = [];
+  const deferred = []; // faces skipped due to sharp creases
 
   // Place root face
   const [ai, bi, ci] = faces[startFace];
@@ -270,19 +290,26 @@ function unwrapConnected(vertices, faces, faceGroups, seed) {
     });
   }
 
-  // BFS with shuffled neighbors — different seeds produce different branching
   while (queue.length > 0) {
     const current = queue.shift();
     if (!placed[current]) continue;
     const currentVm = placed[current].vm;
     const currentFace = faces[current];
 
-    // Shuffle neighbors for this face — creates unique branching per seed
+    // Sort neighbors: flattest edges first, then shuffle within similar angles
     const neighbors = shuffleArray(adj[current], rand);
+    neighbors.sort((a, b) => a.angle - b.angle);
 
-    for (const { neighbor, sharedEdge } of neighbors) {
+    for (const { neighbor, sharedEdge, angle } of neighbors) {
       if (visited.has(neighbor)) continue;
       visited.add(neighbor);
+
+      // Cut at sharp creases — defer these faces
+      if (angle > CREASE_THRESHOLD) {
+        deferred.push(neighbor);
+        continue;
+      }
+
       queue.push(neighbor);
 
       const [sv0, sv1] = sharedEdge;
@@ -301,10 +328,62 @@ function unwrapConnected(vertices, faces, faceGroups, seed) {
     }
   }
 
-  // Handle disconnected components (rare)
+  // Process deferred faces: unfold them as small connected sub-nets
+  // starting from each deferred face, using the same crease-aware BFS
+  for (const dStart of deferred) {
+    if (placed[dStart]) continue; // already placed via another path
+
+    const subQueue = [dStart];
+    const subPlaced = {};
+
+    const [da, db, dc] = faces[dStart];
+    const va = vertices[da], vb = vertices[db], vc = vertices[dc];
+    const d1 = dist3(va, vb), d2 = dist3(va, vc), d3 = dist3(vb, vc);
+    if (d1 < 1e-10) continue;
+    const cpx = (d1 * d1 + d2 * d2 - d3 * d3) / (2 * d1);
+    const cpy = Math.sqrt(Math.max(0, d2 * d2 - cpx * cpx));
+
+    subPlaced[dStart] = {
+      corners: [[0, 0], [d1, 0], [cpx, cpy]],
+      vm: { [da]: [0, 0], [db]: [d1, 0], [dc]: [cpx, cpy] },
+    };
+    placed[dStart] = subPlaced[dStart];
+    faces2D.push({
+      vertices: subPlaced[dStart].corners,
+      groupId: faceGroups[dStart],
+      faceIndex: dStart,
+    });
+
+    while (subQueue.length > 0) {
+      const current = subQueue.shift();
+      const curVm = subPlaced[current]?.vm || placed[current]?.vm;
+      if (!curVm) continue;
+      const curFace = faces[current];
+      const nbrs = shuffleArray(adj[current], rand);
+
+      for (const { neighbor, sharedEdge, angle } of nbrs) {
+        if (visited.has(neighbor) || placed[neighbor]) continue;
+        visited.add(neighbor);
+        if (angle > CREASE_THRESHOLD) { deferred.push(neighbor); continue; }
+        subQueue.push(neighbor);
+
+        const [sv0, sv1] = sharedEdge;
+        const curThird = curFace.find(v => v !== sv0 && v !== sv1);
+        const refl = reflectAcrossLine(curVm[curThird], curVm[sv0], curVm[sv1]);
+        const nbrFace = faces[neighbor];
+        const nbrThird = nbrFace.find(v => v !== sv0 && v !== sv1);
+        const vm = { [sv0]: curVm[sv0], [sv1]: curVm[sv1], [nbrThird]: refl };
+        const corners = nbrFace.map(v => vm[v]);
+        subPlaced[neighbor] = { corners, vm };
+        placed[neighbor] = subPlaced[neighbor];
+        faces2D.push({ vertices: corners, groupId: faceGroups[neighbor], faceIndex: neighbor });
+      }
+    }
+  }
+
+  // Any remaining unvisited faces
   for (let fi = 0; fi < faces.length; fi++) {
-    if (visited.has(fi)) continue;
-    visited.add(fi);
+    if (placed[fi]) continue;
     const [a2, b2, c2] = faces[fi];
     const va = vertices[a2], vb = vertices[b2], vc = vertices[c2];
     const d1 = dist3(va, vb), d2 = dist3(va, vc), d3 = dist3(vb, vc);

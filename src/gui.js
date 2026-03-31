@@ -46,7 +46,7 @@ export function initGUI(config, onChange, callbacks = {}) {
 
   const unwrapFolder = shapePage.addFolder({ title: 'Unwrap', expanded: true });
   unwrapFolder.addBinding(config.unwrap, 'layout', {
-    options: { Flower: 'flower', Freeform: 'freeform', Strip: 'strip', Cross: 'cross' },
+    options: { Flower: 'flower', Connected: 'connected', Islands: 'islands', Strip: 'strip', Cross: 'cross' },
   });
   unwrapFolder.addBinding(config.unwrap, 'clusterRotation', { min: 0, max: Math.PI * 2 });
   unwrapFolder.addBinding(config.unwrap, 'seed', { min: 1, max: 999, step: 1, label: 'net variant' });
