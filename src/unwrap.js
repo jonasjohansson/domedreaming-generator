@@ -23,8 +23,11 @@ export function unwrapMesh(options) {
     faces2D = unwrapGenericPatches(vertices, faces, faceGroups, seed);
   } else if (layout === 'connected') {
     faces2D = unwrapConnected(vertices, faces, faceGroups, seed);
+  } else if (isGeodesic && layout === 'flower' && frequency > 1) {
+    // Centered connected unfolding from north pole — complex shapes at high freq
+    faces2D = unwrapCenteredFlower(vertices, faces, faceGroups, seed);
   } else if (isGeodesic && (layout === 'flower' || layout === 'strip' || layout === 'cross')) {
-    // Centered radial layouts — work at all frequencies
+    // Classic 20-face layouts for freq 1
     faces2D = unwrapGeodesic(vertices, faces, faceGroups, layout, seed);
   } else {
     // Non-geodesic default
@@ -215,6 +218,105 @@ function layoutPetal(baseFaces, seed) {
     result[fi] = [...placed[fi].corners];
   }
   return result;
+}
+
+// ============================================================
+// Centered flower: BFS from north pole, radiates outward
+// ============================================================
+// At higher frequencies, produces complex centered shapes where
+// the outline grows more intricate with more faces.
+
+function unwrapCenteredFlower(vertices, faces, faceGroups, seed) {
+  const rand = mulberry32(seed);
+
+  // Build adjacency
+  const edgeMap = {};
+  for (let fi = 0; fi < faces.length; fi++) {
+    const face = faces[fi];
+    for (let e = 0; e < 3; e++) {
+      const v0 = face[e], v1 = face[(e + 1) % 3];
+      const key = Math.min(v0, v1) + ',' + Math.max(v0, v1);
+      if (!edgeMap[key]) edgeMap[key] = [];
+      edgeMap[key].push(fi);
+    }
+  }
+
+  const adj = Array.from({ length: faces.length }, () => []);
+  for (const key of Object.keys(edgeMap)) {
+    const fis = edgeMap[key];
+    if (fis.length === 2) {
+      const [v0, v1] = key.split(',').map(Number);
+      adj[fis[0]].push({ neighbor: fis[1], sharedEdge: [v0, v1] });
+      adj[fis[1]].push({ neighbor: fis[0], sharedEdge: [v0, v1] });
+    }
+  }
+
+  // Find the face closest to the north pole (highest average Y)
+  // This centers the unfolding at the top of the dome
+  let bestFace = 0, bestY = -Infinity;
+  for (let fi = 0; fi < faces.length; fi++) {
+    const [ai, bi, ci] = faces[fi];
+    const avgY = (vertices[ai][1] + vertices[bi][1] + vertices[ci][1]) / 3;
+    if (avgY > bestY) { bestY = avgY; bestFace = fi; }
+  }
+
+  // Use seed to optionally shift the start face among the top faces
+  // (different seeds pick slightly different center faces for variety)
+  const topFaces = [];
+  for (let fi = 0; fi < faces.length; fi++) {
+    const [ai, bi, ci] = faces[fi];
+    const avgY = (vertices[ai][1] + vertices[bi][1] + vertices[ci][1]) / 3;
+    if (avgY > bestY * 0.85) topFaces.push(fi);
+  }
+  const startFace = topFaces[Math.floor(rand() * topFaces.length)] || bestFace;
+
+  const placed = {};
+  const visited = new Set([startFace]);
+  const queue = [startFace];
+  const faces2D = [];
+
+  // Place root face centered at origin
+  const [ai, bi, ci] = faces[startFace];
+  const a = vertices[ai], b = vertices[bi], c = vertices[ci];
+  const dAB = dist3(a, b), dAC = dist3(a, c), dBC = dist3(b, c);
+  if (dAB > 1e-10) {
+    const px = (dAB * dAB + dAC * dAC - dBC * dBC) / (2 * dAB);
+    const py = Math.sqrt(Math.max(0, dAC * dAC - px * px));
+    // Center the root triangle at origin
+    const cx = (0 + dAB + px) / 3, cy = (0 + 0 + py) / 3;
+    placed[startFace] = {
+      corners: [[-cx, -cy], [dAB - cx, -cy], [px - cx, py - cy]],
+      vm: { [ai]: [-cx, -cy], [bi]: [dAB - cx, -cy], [ci]: [px - cx, py - cy] },
+    };
+    faces2D.push({ vertices: placed[startFace].corners, groupId: faceGroups[startFace], faceIndex: startFace });
+  }
+
+  // BFS with shuffled neighbors — radiates outward from center
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!placed[current]) continue;
+    const currentVm = placed[current].vm;
+    const currentFace = faces[current];
+    const neighbors = shuffleArray(adj[current], rand);
+
+    for (const { neighbor, sharedEdge } of neighbors) {
+      if (visited.has(neighbor)) continue;
+      visited.add(neighbor);
+      queue.push(neighbor);
+
+      const [sv0, sv1] = sharedEdge;
+      const currentThird = currentFace.find(v => v !== sv0 && v !== sv1);
+      const reflected = reflectAcrossLine(currentVm[currentThird], currentVm[sv0], currentVm[sv1]);
+      const neighborFace = faces[neighbor];
+      const neighborThird = neighborFace.find(v => v !== sv0 && v !== sv1);
+      const vm = { [sv0]: currentVm[sv0], [sv1]: currentVm[sv1], [neighborThird]: reflected };
+      const corners = neighborFace.map(v => vm[v]);
+      placed[neighbor] = { corners, vm };
+      faces2D.push({ vertices: corners, groupId: faceGroups[neighbor], faceIndex: neighbor });
+    }
+  }
+
+  return faces2D;
 }
 
 // ============================================================
