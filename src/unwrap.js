@@ -1,45 +1,40 @@
 /**
- * Unwraps a geodesic mesh into a flat 2D layout.
+ * Unwraps a geodesic or arbitrary mesh into a flat 2D layout.
  *
- * The approach:
- * 1. Place the 20 icosahedron parent triangles as a connected net (edge-to-edge unfolding via BFS)
- * 2. Within each parent triangle, subdivide using the same barycentric grid as geodesic.js
- * 3. Apply gap by shrinking each parent triangle toward its centroid
- *
- * @param {Object} options
- * @param {object} options.mesh - Output from generateGeodesic()
- * @param {string} options.layout - 'flower' | 'strip' | 'cross'
- * @param {number} options.gap - Space between face clusters (0-1, default 0.1)
- * @param {number} options.clusterRotation - Overall rotation in radians (default 0)
- * @returns {{ faces2D: { vertices: [number,number][], groupId: number, faceIndex: number }[], bounds: object }}
+ * Geodesic: icosahedron net with barycentric subdivision.
+ * Generic: patch-based BFS edge-unfolding (connected groups of ~30 faces).
+ * Both support organic randomization (scatter, jitter, spin, drift, scale variation).
  */
 export function unwrapMesh(options) {
-  const { mesh, layout = 'flower', gap = 0.1, clusterRotation = 0, isGeodesic = true } = options || {};
+  const {
+    mesh, layout = 'flower', gap = 0.1, clusterRotation = 0,
+    isGeodesic = true,
+    scatter = 0, jitter = 0, groupSpin = 0, scaleVar = 0, drift = 0, seed = 42,
+  } = options || {};
   const { vertices, faces, faceGroups } = mesh;
 
   let faces2D;
   if (isGeodesic) {
     faces2D = unwrapGeodesic(vertices, faces, faceGroups, layout, gap);
   } else {
-    faces2D = unwrapGeneric(vertices, faces, faceGroups, gap);
+    faces2D = unwrapGenericPatches(vertices, faces, faceGroups, gap);
+  }
+
+  // --- Organic transforms (applied per face-group / patch) ---
+  if (scatter > 0 || jitter > 0 || groupSpin > 0 || scaleVar > 0 || drift > 0) {
+    applyOrganicTransforms(faces2D, { scatter, jitter, groupSpin, scaleVar, drift, seed });
   }
 
   // Apply overall rotation
   if (clusterRotation !== 0) {
-    let cx = 0, cy = 0, count = 0;
+    const [cx, cy] = centroid(faces2D);
+    const cos = Math.cos(clusterRotation);
+    const sin = Math.sin(clusterRotation);
     for (const f of faces2D) {
-      for (const [x, y] of f.vertices) { cx += x; cy += y; count++; }
-    }
-    if (count > 0) {
-      cx /= count; cy /= count;
-      const cos = Math.cos(clusterRotation);
-      const sin = Math.sin(clusterRotation);
-      for (const f of faces2D) {
-        f.vertices = f.vertices.map(([x, y]) => {
-          const dx = x - cx, dy = y - cy;
-          return [cx + dx * cos - dy * sin, cy + dx * sin + dy * cos];
-        });
-      }
+      f.vertices = f.vertices.map(([x, y]) => {
+        const dx = x - cx, dy = y - cy;
+        return [cx + dx * cos - dy * sin, cy + dx * sin + dy * cos];
+      });
     }
   }
 
@@ -58,7 +53,99 @@ export function unwrapMesh(options) {
   };
 }
 
-// --- Geodesic unwrap (icosahedron net with barycentric subdivision) ---
+// ============================================================
+// Seeded PRNG (mulberry32)
+// ============================================================
+
+function mulberry32(seed) {
+  let s = seed | 0;
+  return function () {
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// ============================================================
+// Organic transforms
+// ============================================================
+
+function centroid(faces2D) {
+  let cx = 0, cy = 0, count = 0;
+  for (const f of faces2D) {
+    for (const [x, y] of f.vertices) { cx += x; cy += y; count++; }
+  }
+  return count > 0 ? [cx / count, cy / count] : [0, 0];
+}
+
+function applyOrganicTransforms(faces2D, opts) {
+  const { scatter, jitter, groupSpin, scaleVar, drift, seed } = opts;
+  const rand = mulberry32(seed);
+
+  // Group faces by groupId
+  const groups = {};
+  for (const f of faces2D) {
+    const g = f.groupId;
+    if (!groups[g]) groups[g] = [];
+    groups[g].push(f);
+  }
+
+  const [globalCx, globalCy] = centroid(faces2D);
+
+  for (const gid of Object.keys(groups)) {
+    const groupFaces = groups[gid];
+
+    // Group centroid
+    let gcx = 0, gcy = 0, gc = 0;
+    for (const f of groupFaces) {
+      for (const [x, y] of f.vertices) { gcx += x; gcy += y; gc++; }
+    }
+    gcx /= gc; gcy /= gc;
+
+    // Scatter: push group away from global center
+    const scatterDx = (gcx - globalCx) * scatter;
+    const scatterDy = (gcy - globalCy) * scatter;
+
+    // Jitter: random offset
+    const jitterDx = (rand() - 0.5) * 2 * jitter;
+    const jitterDy = (rand() - 0.5) * 2 * jitter;
+
+    // Drift: smooth directional push based on group position (Perlin-like)
+    const angle = rand() * Math.PI * 2;
+    const driftDx = Math.cos(angle) * drift * 0.5;
+    const driftDy = Math.sin(angle) * drift * 0.5;
+
+    // Group spin: random rotation around group centroid
+    const spinAngle = (rand() - 0.5) * 2 * Math.PI * groupSpin;
+    const cos = Math.cos(spinAngle);
+    const sin = Math.sin(spinAngle);
+
+    // Scale variation
+    const scaleFactor = 1 + (rand() - 0.5) * 2 * scaleVar;
+
+    const totalDx = scatterDx + jitterDx + driftDx;
+    const totalDy = scatterDy + jitterDy + driftDy;
+
+    for (const f of groupFaces) {
+      f.vertices = f.vertices.map(([x, y]) => {
+        // Rotate around group centroid
+        let dx = x - gcx, dy = y - gcy;
+        let rx = dx * cos - dy * sin;
+        let ry = dx * sin + dy * cos;
+        // Scale around group centroid
+        rx *= scaleFactor;
+        ry *= scaleFactor;
+        // Translate
+        return [rx + gcx + totalDx, ry + gcy + totalDy];
+      });
+    }
+  }
+}
+
+// ============================================================
+// Geodesic unwrap (icosahedron net with barycentric subdivision)
+// ============================================================
 
 function unwrapGeodesic(vertices, faces, faceGroups, layout, gap) {
   const baseFaces = [
@@ -97,29 +184,27 @@ function unwrapGeodesic(vertices, faces, faceGroups, layout, gap) {
   for (const gStr of Object.keys(facesByGroup)) {
     const g = Number(gStr);
     if (!parentTriangles[g]) continue;
-
     const [p0, p1, p2] = parentTriangles[g];
     const subTris = subdivideTriangle2D(p0, p1, p2, frequency);
     const groupFaceIndices = facesByGroup[g];
-
     for (let i = 0; i < groupFaceIndices.length && i < subTris.length; i++) {
-      faces2D.push({
-        vertices: subTris[i],
-        groupId: g,
-        faceIndex: groupFaceIndices[i],
-      });
+      faces2D.push({ vertices: subTris[i], groupId: g, faceIndex: groupFaceIndices[i] });
     }
   }
   return faces2D;
 }
 
-// --- Generic unwrap (grid strip layout for arbitrary meshes) ---
-// BFS edge-unfolding doesn't work for complex meshes (massive overlaps).
-// Instead: flatten each face preserving edge lengths, pack in a grid strip
-// ordered by BFS traversal so adjacent faces stay near each other.
+// ============================================================
+// Generic unwrap: patch-based BFS edge-unfolding
+// ============================================================
+// Unfolds faces in connected patches (max ~40 faces each) using edge
+// reflection, then arranges patches in a grid. Produces connected "islands"
+// similar to the Dome Dreaming logo aesthetic.
 
-function unwrapGeneric(vertices, faces, faceGroups, gap) {
-  // BFS to determine face ordering (locality-preserving)
+const MAX_PATCH_SIZE = 40;
+
+function unwrapGenericPatches(vertices, faces, faceGroups, gap) {
+  // Build face adjacency with shared edge info
   const edgeMap = {};
   for (let fi = 0; fi < faces.length; fi++) {
     const face = faces[fi];
@@ -136,125 +221,154 @@ function unwrapGeneric(vertices, faces, faceGroups, gap) {
   for (const key of Object.keys(edgeMap)) {
     const fis = edgeMap[key];
     if (fis.length === 2) {
-      adj[fis[0]].push(fis[1]);
-      adj[fis[1]].push(fis[0]);
+      const [v0, v1] = key.split(',').map(Number);
+      adj[fis[0]].push({ neighbor: fis[1], sharedEdge: [v0, v1] });
+      adj[fis[1]].push({ neighbor: fis[0], sharedEdge: [v0, v1] });
     }
   }
 
-  // BFS ordering
-  const order = [];
-  const visited = new Set();
+  // Create patches via BFS with size limit
+  const globalVisited = new Set();
+  const patches = []; // each patch = array of { corners, faceIndex, groupId }
+
   for (let start = 0; start < faces.length; start++) {
-    if (visited.has(start)) continue;
+    if (globalVisited.has(start)) continue;
+
+    const patch = [];
+    const placed = {};
     const queue = [start];
-    visited.add(start);
-    while (queue.length > 0) {
+    const patchVisited = new Set([start]);
+    globalVisited.add(start);
+
+    // Place root face
+    const [ai, bi, ci] = faces[start];
+    const a = vertices[ai], b = vertices[bi], c = vertices[ci];
+    const dAB = dist3(a, b), dAC = dist3(a, c), dBC = dist3(b, c);
+    if (dAB < 1e-10) { continue; }
+    const px = (dAB * dAB + dAC * dAC - dBC * dBC) / (2 * dAB);
+    const py = Math.sqrt(Math.max(0, dAC * dAC - px * px));
+    const rootCorners = [[0, 0], [dAB, 0], [px, py]];
+
+    placed[start] = {
+      corners: rootCorners,
+      vm: { [ai]: [0, 0], [bi]: [dAB, 0], [ci]: [px, py] },
+    };
+    patch.push({ corners: rootCorners, faceIndex: start, groupId: faceGroups[start] });
+
+    while (queue.length > 0 && patch.length < MAX_PATCH_SIZE) {
       const current = queue.shift();
-      order.push(current);
-      for (const neighbor of adj[current]) {
-        if (visited.has(neighbor)) continue;
-        visited.add(neighbor);
+      const currentVm = placed[current].vm;
+      const currentFace = faces[current];
+
+      for (const { neighbor, sharedEdge } of adj[current]) {
+        if (patchVisited.has(neighbor)) continue;
+        if (patch.length >= MAX_PATCH_SIZE) break;
+
+        patchVisited.add(neighbor);
+        globalVisited.add(neighbor);
         queue.push(neighbor);
+
+        const [sv0, sv1] = sharedEdge;
+        const edgeP0 = currentVm[sv0];
+        const edgeP1 = currentVm[sv1];
+        const currentThird = currentFace.find(v => v !== sv0 && v !== sv1);
+        const currentThirdP = currentVm[currentThird];
+
+        const neighborFace = faces[neighbor];
+        const neighborThird = neighborFace.find(v => v !== sv0 && v !== sv1);
+        const reflected = reflectAcrossLine(currentThirdP, edgeP0, edgeP1);
+
+        const vm = { [sv0]: edgeP0, [sv1]: edgeP1, [neighborThird]: reflected };
+        const corners = neighborFace.map(v => vm[v]);
+
+        placed[neighbor] = { corners, vm };
+        patch.push({ corners, faceIndex: neighbor, groupId: faceGroups[neighbor] });
       }
     }
+
+    patches.push(patch);
   }
 
-  // Flatten each face preserving edge lengths, find max size for grid
-  const flatFaces = [];
-  let maxW = 0, maxH = 0;
-
-  for (const fi of order) {
-    const [ai, bi, ci] = faces[fi];
-    const a = vertices[ai], b = vertices[bi], c = vertices[ci];
-    const corners = flattenTriangle3D(a, b, c);
-
-    // Compute bounding box
+  // Compute bounding box of each patch, then arrange in grid
+  const patchBounds = patches.map(patch => {
     let mnX = Infinity, mnY = Infinity, mxX = -Infinity, mxY = -Infinity;
-    for (const [x, y] of corners) {
-      mnX = Math.min(mnX, x); mnY = Math.min(mnY, y);
-      mxX = Math.max(mxX, x); mxY = Math.max(mxY, y);
+    for (const f of patch) {
+      for (const [x, y] of f.corners) {
+        mnX = Math.min(mnX, x); mnY = Math.min(mnY, y);
+        mxX = Math.max(mxX, x); mxY = Math.max(mxY, y);
+      }
     }
-    const w = mxX - mnX, h = mxY - mnY;
-    maxW = Math.max(maxW, w);
-    maxH = Math.max(maxH, h);
+    return { minX: mnX, minY: mnY, width: mxX - mnX, height: mxY - mnY };
+  });
 
-    // Center the triangle at origin
-    const cx = (mnX + mxX) / 2, cy = (mnY + mxY) / 2;
-    const centered = corners.map(([x, y]) => [x - cx, y - cy]);
-    flatFaces.push({ corners: centered, groupId: faceGroups[fi], faceIndex: fi });
-  }
-
-  // Pack into grid
-  const cellW = maxW * (1 + gap * 0.5);
-  const cellH = maxH * (1 + gap * 0.5);
-  const cols = Math.ceil(Math.sqrt(flatFaces.length * (cellW / cellH)));
-
+  // Simple row packing
   const faces2D = [];
-  for (let i = 0; i < flatFaces.length; i++) {
-    const col = i % cols;
-    const row = Math.floor(i / cols);
-    const ox = col * cellW;
-    const oy = row * cellH;
+  let rowX = 0, rowY = 0, rowMaxH = 0;
+  const totalWidth = patchBounds.reduce((s, b) => s + b.width, 0);
+  const targetRowWidth = Math.sqrt(totalWidth * patchBounds.reduce((s, b) => Math.max(s, b.height), 0) * patches.length) * 0.8;
 
-    const f = flatFaces[i];
-    const shifted = f.corners.map(([x, y]) => [x + ox, y + oy]);
+  for (let pi = 0; pi < patches.length; pi++) {
+    const patch = patches[pi];
+    const bounds = patchBounds[pi];
+    const gapOffset = gap * 0.3;
 
-    faces2D.push({
-      vertices: gap > 0 ? shrinkTriangle(shifted, gap * 0.3) : shifted,
-      groupId: f.groupId,
-      faceIndex: f.faceIndex,
-    });
+    // Check if we need a new row
+    if (rowX + bounds.width > targetRowWidth && rowX > 0) {
+      rowY += rowMaxH + gapOffset;
+      rowX = 0;
+      rowMaxH = 0;
+    }
+
+    const offsetX = rowX - bounds.minX;
+    const offsetY = rowY - bounds.minY;
+
+    // Assign a unique groupId per patch for organic transforms
+    const patchGroupId = pi;
+
+    for (const f of patch) {
+      let corners = f.corners.map(([x, y]) => [x + offsetX, y + offsetY]);
+      if (gap > 0) corners = shrinkTriangle(corners, gap * 0.15);
+      faces2D.push({
+        vertices: corners,
+        groupId: patchGroupId,
+        faceIndex: f.faceIndex,
+      });
+    }
+
+    rowX += bounds.width + gapOffset;
+    rowMaxH = Math.max(rowMaxH, bounds.height);
   }
+
   return faces2D;
 }
 
-function flattenTriangle3D(a, b, c) {
-  const dAB = dist3(a, b);
-  const dAC = dist3(a, c);
-  const dBC = dist3(b, c);
-  if (dAB < 1e-10) return [[0, 0], [0, 0], [0, 0]];
-  const px = (dAB * dAB + dAC * dAC - dBC * dBC) / (2 * dAB);
-  const py = Math.sqrt(Math.max(0, dAC * dAC - px * px));
-  return [[0, 0], [dAB, 0], [px, py]];
-}
+// ============================================================
+// Helpers
+// ============================================================
 
 function dist3(a, b) {
   const dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2];
   return Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
 
-// --- Barycentric subdivision of a 2D triangle ---
-// Generates sub-triangles in the same order as geodesic.js
-
 function subdivideTriangle2D(p0, p1, p2, frequency) {
   const n = frequency;
   if (n <= 0) return [[p0, p1, p2]];
-
   const subTris = [];
-
   function vert(i, j) {
     const k = n - i - j;
-    return [
-      (p0[0] * k + p1[0] * i + p2[0] * j) / n,
-      (p0[1] * k + p1[1] * i + p2[1] * j) / n,
-    ];
+    return [(p0[0] * k + p1[0] * i + p2[0] * j) / n, (p0[1] * k + p1[1] * i + p2[1] * j) / n];
   }
-
   for (let i = 0; i < n; i++) {
     for (let j = 0; j < n - i; j++) {
-      // Upward triangle
       subTris.push([vert(i, j), vert(i + 1, j), vert(i, j + 1)]);
-      // Downward triangle
       if (i + j + 1 < n) {
         subTris.push([vert(i + 1, j), vert(i + 1, j + 1), vert(i, j + 1)]);
       }
     }
   }
-
   return subTris;
 }
-
-// --- Adjacency and unfolding helpers ---
 
 function buildAdjacency(baseFaces) {
   const edgeMap = {};
@@ -268,7 +382,6 @@ function buildAdjacency(baseFaces) {
       edgeMap[key].push(fi);
     }
   }
-
   const adj = Array.from({ length: baseFaces.length }, () => []);
   for (const key of Object.keys(edgeMap)) {
     const fis = edgeMap[key];
@@ -282,49 +395,34 @@ function buildAdjacency(baseFaces) {
 }
 
 function reflectAcrossLine(p, a, b) {
-  const dx = b[0] - a[0];
-  const dy = b[1] - a[1];
+  const dx = b[0] - a[0], dy = b[1] - a[1];
   const lenSq = dx * dx + dy * dy;
   const t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / lenSq;
-  const projX = a[0] + t * dx;
-  const projY = a[1] + t * dy;
-  return [2 * projX - p[0], 2 * projY - p[1]];
+  return [2 * (a[0] + t * dx) - p[0], 2 * (a[1] + t * dy) - p[1]];
 }
 
-function shrinkTriangle(corners, gap) {
+function shrinkTriangle(corners, amount) {
   const cx = (corners[0][0] + corners[1][0] + corners[2][0]) / 3;
   const cy = (corners[0][1] + corners[1][1] + corners[2][1]) / 3;
-  const factor = 1 - gap;
-  return corners.map(([x, y]) => [
-    cx + (x - cx) * factor,
-    cy + (y - cy) * factor,
-  ]);
+  const f = 1 - amount;
+  return corners.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f]);
 }
 
-// --- Layout: Flower (edge-based BFS unfolding from face 0) ---
-// Produces a connected icosahedron net radiating from the north pole.
+// --- Layout: Flower (BFS edge-unfolding from face 0) ---
 
 function layoutFlower(baseFaces, gap) {
   const adjacency = buildAdjacency(baseFaces);
-  const sideLen = 1;
-  const h = sideLen * Math.sqrt(3) / 2;
-
-  // Place root face as equilateral triangle
+  const sideLen = 1, h = sideLen * Math.sqrt(3) / 2;
   const root = 0;
   const rootCorners = [[0, 0], [sideLen, 0], [sideLen / 2, h]];
+  const rootFace = baseFaces[root];
 
   const placed = {};
-  const rootFace = baseFaces[root];
   placed[root] = {
     corners: rootCorners,
-    vm: {
-      [rootFace[0]]: rootCorners[0],
-      [rootFace[1]]: rootCorners[1],
-      [rootFace[2]]: rootCorners[2],
-    },
+    vm: { [rootFace[0]]: rootCorners[0], [rootFace[1]]: rootCorners[1], [rootFace[2]]: rootCorners[2] },
   };
 
-  // BFS unfolding — each child face is reflected across the shared edge
   const queue = [root];
   const visited = new Set([root]);
 
@@ -332,40 +430,20 @@ function layoutFlower(baseFaces, gap) {
     const current = queue.shift();
     const currentVm = placed[current].vm;
     const currentFace = baseFaces[current];
-
     for (const { neighbor, sharedEdge } of adjacency[current]) {
       if (visited.has(neighbor)) continue;
       visited.add(neighbor);
       queue.push(neighbor);
-
       const [sv0, sv1] = sharedEdge;
-      const edgeP0 = currentVm[sv0];
-      const edgeP1 = currentVm[sv1];
-
-      // Current face's vertex opposite the shared edge
       const currentThird = currentFace.find(v => v !== sv0 && v !== sv1);
-      const currentThirdP = currentVm[currentThird];
-
-      // Neighbor face's vertex opposite the shared edge
+      const reflected = reflectAcrossLine(currentVm[currentThird], currentVm[sv0], currentVm[sv1]);
       const neighborFace = baseFaces[neighbor];
       const neighborThird = neighborFace.find(v => v !== sv0 && v !== sv1);
-
-      // Reflect current's opposite vertex across the shared edge
-      const reflected = reflectAcrossLine(currentThirdP, edgeP0, edgeP1);
-
-      const vm = {
-        [sv0]: edgeP0,
-        [sv1]: edgeP1,
-        [neighborThird]: reflected,
-      };
-
-      // Corners in baseFaces vertex order (critical for barycentric mapping)
-      const corners = neighborFace.map(v => vm[v]);
-      placed[neighbor] = { corners, vm };
+      const vm = { [sv0]: currentVm[sv0], [sv1]: currentVm[sv1], [neighborThird]: reflected };
+      placed[neighbor] = { corners: neighborFace.map(v => vm[v]), vm };
     }
   }
 
-  // Apply gap (shrink each triangle toward its centroid) and return corners
   const result = {};
   for (const fi of Object.keys(placed)) {
     result[fi] = gap > 0 ? shrinkTriangle(placed[fi].corners, gap) : [...placed[fi].corners];
@@ -373,66 +451,30 @@ function layoutFlower(baseFaces, gap) {
   return result;
 }
 
-// --- Layout: Strip (alternating up/down triangles in a row) ---
+// --- Layout: Strip ---
 
 function layoutStrip(gap) {
-  const sideLen = 1;
-  const h = sideLen * Math.sqrt(3) / 2;
-  const result = {};
-
+  const sideLen = 1, h = sideLen * Math.sqrt(3) / 2, result = {};
   for (let i = 0; i < 20; i++) {
-    const pair = Math.floor(i / 2);
-    const isDown = i % 2 === 1;
-
-    let corners;
-    if (!isDown) {
-      corners = [
-        [pair * sideLen, 0],
-        [(pair + 1) * sideLen, 0],
-        [(pair + 0.5) * sideLen, h],
-      ];
-    } else {
-      corners = [
-        [(pair + 0.5) * sideLen, h],
-        [(pair + 1) * sideLen, 0],
-        [(pair + 1.5) * sideLen, h],
-      ];
-    }
-
+    const pair = Math.floor(i / 2), isDown = i % 2 === 1;
+    const corners = isDown
+      ? [[(pair + 0.5) * sideLen, h], [(pair + 1) * sideLen, 0], [(pair + 1.5) * sideLen, h]]
+      : [[pair * sideLen, 0], [(pair + 1) * sideLen, 0], [(pair + 0.5) * sideLen, h]];
     result[i] = gap > 0 ? shrinkTriangle(corners, gap) : corners;
   }
   return result;
 }
 
-// --- Layout: Cross (4 arms of 5 triangles) ---
+// --- Layout: Cross ---
 
 function layoutCross(gap) {
-  const sideLen = 1;
-  const h = sideLen * Math.sqrt(3) / 2;
-  const result = {};
-  const step = sideLen * 1.2;
-
-  const directions = [
-    [1, 0],   // right
-    [0, -1],  // up
-    [-1, 0],  // left
-    [0, 1],   // down
-  ];
-
+  const sideLen = 1, h = sideLen * Math.sqrt(3) / 2, result = {}, step = sideLen * 1.2;
+  const dirs = [[1, 0], [0, -1], [-1, 0], [0, 1]];
   for (let arm = 0; arm < 4; arm++) {
-    const [dx, dy] = directions[arm];
+    const [dx, dy] = dirs[arm];
     for (let i = 0; i < 5; i++) {
-      const gi = arm * 5 + i;
-      const dist = (i + 1) * step;
-      const cx = dx * dist;
-      const cy = dy * dist;
-
-      const corners = [
-        [cx - sideLen / 2, cy - h / 3],
-        [cx + sideLen / 2, cy - h / 3],
-        [cx, cy + 2 * h / 3],
-      ];
-
+      const gi = arm * 5 + i, d = (i + 1) * step, cx = dx * d, cy = dy * d;
+      const corners = [[cx - sideLen / 2, cy - h / 3], [cx + sideLen / 2, cy - h / 3], [cx, cy + 2 * h / 3]];
       result[gi] = gap > 0 ? shrinkTriangle(corners, gap) : corners;
     }
   }
