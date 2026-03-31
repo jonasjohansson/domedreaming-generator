@@ -1,7 +1,9 @@
 /**
  * Unwraps a geodesic or arbitrary mesh into a flat 2D layout.
- * Always produces connected nets — the seed controls which unfolding
- * pattern is used (different root face + BFS neighbor order = different net shape).
+ * Always produces connected nets. The seed controls net variation.
+ *
+ * Flower layout unfolds from the north pole vertex with 5-fold symmetry,
+ * matching the Dome Dreaming logo aesthetic.
  */
 export function unwrapMesh(options) {
   const {
@@ -29,7 +31,6 @@ export function unwrapMesh(options) {
     }
   }
 
-  // Compute bounds
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const f of faces2D) {
     for (const [x, y] of f.vertices) {
@@ -42,7 +43,7 @@ export function unwrapMesh(options) {
 }
 
 // ============================================================
-// Seeded PRNG (mulberry32)
+// Seeded PRNG
 // ============================================================
 
 function mulberry32(seed) {
@@ -105,8 +106,7 @@ function unwrapGeodesic(vertices, faces, faceGroups, layout, gap, seed) {
       break;
     case 'flower':
     default:
-      // Seed controls the net shape: different root + BFS order
-      parentTriangles = layoutFlowerSeeded(baseFaces, gap, seed);
+      parentTriangles = layoutPetal(baseFaces, gap, seed);
       break;
   }
 
@@ -125,38 +125,62 @@ function unwrapGeodesic(vertices, faces, faceGroups, layout, gap, seed) {
 }
 
 // ============================================================
-// Flower layout with seed-controlled spanning tree
+// Petal layout: vertex-based 5-fold symmetric unfolding
 // ============================================================
-// Different seeds produce different connected icosahedron nets by:
-// 1. Choosing a different root face (seed % 20)
-// 2. Shuffling BFS neighbor order (different spanning tree)
+// Unfolds from the north pole vertex (vertex 0) with the 5 surrounding
+// faces fanning out as petals. Remaining faces unfold from the outer
+// edges, producing the Dome Dreaming logo shape.
+//
+// The seed controls:
+// 1. Starting rotation angle
+// 2. BFS neighbor order for outer faces (different net shapes)
 
-function layoutFlowerSeeded(baseFaces, gap, seed) {
+function layoutPetal(baseFaces, gap, seed) {
   const rand = mulberry32(seed);
   const adjacency = buildAdjacency(baseFaces);
-  const sideLen = 1, h = sideLen * Math.sqrt(3) / 2;
+  const sideLen = 1;
 
-  // Pick root face based on seed
-  const root = Math.floor(rand() * baseFaces.length);
-  const rootCorners = [[0, 0], [sideLen, 0], [sideLen / 2, h]];
-  const rootFace = baseFaces[root];
+  // Vertex 0 is the north pole, shared by faces 0-4
+  // Ring vertices in order: face[i] = [0, ringVerts[i], ringVerts[(i+1)%5]]
+  // Face 0: [0,11,5], Face 1: [0,5,1], Face 2: [0,1,7], Face 3: [0,7,10], Face 4: [0,10,11]
+  const ringVerts = [11, 5, 1, 7, 10];
 
+  // Place vertex 0 at center
+  const center = [0, 0];
+
+  // Place ring vertices at 72° intervals (fills full circle for petal aesthetic)
+  const startAngle = rand() * Math.PI * 2;
+  const ringPos = {};
+  for (let i = 0; i < 5; i++) {
+    const angle = startAngle + (i * 72) * Math.PI / 180;
+    ringPos[ringVerts[i]] = [
+      Math.cos(angle) * sideLen,
+      Math.sin(angle) * sideLen,
+    ];
+  }
+
+  // Place the 5 center faces
   const placed = {};
-  placed[root] = {
-    corners: rootCorners,
-    vm: { [rootFace[0]]: rootCorners[0], [rootFace[1]]: rootCorners[1], [rootFace[2]]: rootCorners[2] },
-  };
+  for (let fi = 0; fi < 5; fi++) {
+    const face = baseFaces[fi];
+    // face = [0, ringVerts[fi], ringVerts[(fi+1)%5]]
+    const vm = {
+      [face[0]]: center,
+      [face[1]]: ringPos[face[1]],
+      [face[2]]: ringPos[face[2]],
+    };
+    placed[fi] = { corners: face.map(v => vm[v]), vm };
+  }
 
-  // BFS with shuffled neighbor order → different spanning tree = different net
-  const queue = [root];
-  const visited = new Set([root]);
+  // BFS unfold remaining 15 faces from outer edges of the ring
+  const queue = shuffleArray([0, 1, 2, 3, 4], rand);
+  const visited = new Set([0, 1, 2, 3, 4]);
 
   while (queue.length > 0) {
     const current = queue.shift();
     const currentVm = placed[current].vm;
     const currentFace = baseFaces[current];
 
-    // Shuffle neighbors for this face → different unfolding pattern
     const neighbors = shuffleArray(adjacency[current], rand);
 
     for (const { neighbor, sharedEdge } of neighbors) {
@@ -185,8 +209,6 @@ function layoutFlowerSeeded(baseFaces, gap, seed) {
 // Generic unwrap: patch-based BFS edge-unfolding
 // ============================================================
 
-const MAX_PATCH_SIZE = 40;
-
 function unwrapGenericPatches(vertices, faces, faceGroups, gap, seed) {
   const rand = mulberry32(seed);
 
@@ -212,106 +234,65 @@ function unwrapGenericPatches(vertices, faces, faceGroups, gap, seed) {
     }
   }
 
-  // Create patches via BFS with shuffled neighbor order
+  // Full BFS edge-unfolding — one connected piece (overlaps are OK, it's the aesthetic)
+  const faces2D = [];
   const globalVisited = new Set();
-  const patches = [];
 
-  // Randomize starting order
-  const startOrder = shuffleArray(Array.from({ length: faces.length }, (_, i) => i), rand);
+  // Pick a seed-based starting face
+  const startFace = Math.floor(rand() * faces.length);
+  const queue = [startFace];
+  globalVisited.add(startFace);
+  const placed = {};
 
-  for (const start of startOrder) {
-    if (globalVisited.has(start)) continue;
-
-    const patch = [];
-    const placed = {};
-    const queue = [start];
-    const patchVisited = new Set([start]);
-    globalVisited.add(start);
-
-    // Place root face
-    const [ai, bi, ci] = faces[start];
-    const a = vertices[ai], b = vertices[bi], c = vertices[ci];
-    const dAB = dist3(a, b), dAC = dist3(a, c), dBC = dist3(b, c);
-    if (dAB < 1e-10) continue;
+  // Place root
+  const [ai, bi, ci] = faces[startFace];
+  const a = vertices[ai], b = vertices[bi], c = vertices[ci];
+  const dAB = dist3(a, b), dAC = dist3(a, c), dBC = dist3(b, c);
+  if (dAB > 1e-10) {
     const px = (dAB * dAB + dAC * dAC - dBC * dBC) / (2 * dAB);
     const py = Math.sqrt(Math.max(0, dAC * dAC - px * px));
-
-    placed[start] = {
+    placed[startFace] = {
       corners: [[0, 0], [dAB, 0], [px, py]],
       vm: { [ai]: [0, 0], [bi]: [dAB, 0], [ci]: [px, py] },
     };
-    patch.push({ corners: placed[start].corners, faceIndex: start, groupId: faceGroups[start] });
-
-    while (queue.length > 0 && patch.length < MAX_PATCH_SIZE) {
-      const current = queue.shift();
-      const currentVm = placed[current].vm;
-      const currentFace = faces[current];
-
-      const neighbors = shuffleArray(adj[current], rand);
-
-      for (const { neighbor, sharedEdge } of neighbors) {
-        if (patchVisited.has(neighbor)) continue;
-        if (patch.length >= MAX_PATCH_SIZE) break;
-
-        patchVisited.add(neighbor);
-        globalVisited.add(neighbor);
-        queue.push(neighbor);
-
-        const [sv0, sv1] = sharedEdge;
-        const currentThird = currentFace.find(v => v !== sv0 && v !== sv1);
-        const reflected = reflectAcrossLine(currentVm[currentThird], currentVm[sv0], currentVm[sv1]);
-        const neighborFace = faces[neighbor];
-        const neighborThird = neighborFace.find(v => v !== sv0 && v !== sv1);
-        const vm = { [sv0]: currentVm[sv0], [sv1]: currentVm[sv1], [neighborThird]: reflected };
-        const corners = neighborFace.map(v => vm[v]);
-
-        placed[neighbor] = { corners, vm };
-        patch.push({ corners, faceIndex: neighbor, groupId: faceGroups[neighbor] });
-      }
-    }
-
-    patches.push(patch);
+    faces2D.push({ vertices: placed[startFace].corners, groupId: faceGroups[startFace], faceIndex: startFace });
   }
 
-  // Arrange patches in rows
-  const patchBounds = patches.map(patch => {
-    let mnX = Infinity, mnY = Infinity, mxX = -Infinity, mxY = -Infinity;
-    for (const f of patch) {
-      for (const [x, y] of f.corners) {
-        mnX = Math.min(mnX, x); mnY = Math.min(mnY, y);
-        mxX = Math.max(mxX, x); mxY = Math.max(mxY, y);
-      }
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!placed[current]) continue;
+    const currentVm = placed[current].vm;
+    const currentFace = faces[current];
+    const neighbors = shuffleArray(adj[current], rand);
+
+    for (const { neighbor, sharedEdge } of neighbors) {
+      if (globalVisited.has(neighbor)) continue;
+      globalVisited.add(neighbor);
+      queue.push(neighbor);
+
+      const [sv0, sv1] = sharedEdge;
+      const currentThird = currentFace.find(v => v !== sv0 && v !== sv1);
+      const reflected = reflectAcrossLine(currentVm[currentThird], currentVm[sv0], currentVm[sv1]);
+      const neighborFace = faces[neighbor];
+      const neighborThird = neighborFace.find(v => v !== sv0 && v !== sv1);
+      const vm = { [sv0]: currentVm[sv0], [sv1]: currentVm[sv1], [neighborThird]: reflected };
+      const corners = neighborFace.map(v => vm[v]);
+      placed[neighbor] = { corners, vm };
+      faces2D.push({ vertices: corners, groupId: faceGroups[neighbor], faceIndex: neighbor });
     }
-    return { minX: mnX, minY: mnY, width: mxX - mnX, height: mxY - mnY };
-  });
+  }
 
-  const faces2D = [];
-  let rowX = 0, rowY = 0, rowMaxH = 0;
-  const totalArea = patchBounds.reduce((s, b) => s + b.width * b.height, 0);
-  const targetRowWidth = Math.sqrt(totalArea) * 1.5;
-
-  for (let pi = 0; pi < patches.length; pi++) {
-    const patch = patches[pi];
-    const bounds = patchBounds[pi];
-    const gapOffset = gap * 0.3;
-
-    if (rowX + bounds.width > targetRowWidth && rowX > 0) {
-      rowY += rowMaxH + gapOffset;
-      rowX = 0;
-      rowMaxH = 0;
-    }
-
-    const offsetX = rowX - bounds.minX;
-    const offsetY = rowY - bounds.minY;
-
-    for (const f of patch) {
-      let corners = f.corners.map(([x, y]) => [x + offsetX, y + offsetY]);
-      if (gap > 0) corners = shrinkTriangle(corners, gap * 0.15);
-      faces2D.push({ vertices: corners, groupId: f.groupId, faceIndex: f.faceIndex });
-    }
-
-    rowX += bounds.width + gapOffset;
-    rowMaxH = Math.max(rowMaxH, bounds.height);
+  // Handle any disconnected components
+  for (let fi = 0; fi < faces.length; fi++) {
+    if (globalVisited.has(fi)) continue;
+    globalVisited.add(fi);
+    const [a2, b2, c2] = faces[fi];
+    const va = vertices[a2], vb = vertices[b2], vc = vertices[c2];
+    const d1 = dist3(va, vb), d2 = dist3(va, vc), d3 = dist3(vb, vc);
+    if (d1 < 1e-10) continue;
+    const cpx = (d1 * d1 + d2 * d2 - d3 * d3) / (2 * d1);
+    const cpy = Math.sqrt(Math.max(0, d2 * d2 - cpx * cpx));
+    faces2D.push({ vertices: [[0, 0], [d1, 0], [cpx, cpy]], groupId: faceGroups[fi], faceIndex: fi });
   }
 
   return faces2D;
