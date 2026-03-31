@@ -31,7 +31,17 @@ export const defaultConfig = {
 export function loadConfig() {
   const stored = localStorage.getItem('domedreaming-config');
   if (stored) {
-    try { return JSON.parse(stored); } catch(e) { /* ignore */ }
+    try {
+      const parsed = JSON.parse(stored);
+      // Deep merge with defaults to pick up any new fields
+      const merged = structuredClone(defaultConfig);
+      for (const section of Object.keys(merged)) {
+        if (parsed[section] && typeof merged[section] === 'object') {
+          Object.assign(merged[section], parsed[section]);
+        }
+      }
+      return merged;
+    } catch(e) { /* ignore */ }
   }
   return null;
 }
