@@ -14,12 +14,17 @@ let mediaElement = null;
 let mediaMesh = null;
 let mediaUVs = null;
 let videoAnimFrameId = null;
+let currentConfig = null;
 
 // 20-color palette matching viewport-3d.js: hue = i/20, sat 65%, light 55%
 const colorPalette = Array.from({ length: 20 }, (_, i) => {
   const hue = (i / 20) * 360;
   return `hsl(${hue}, 65%, 55%)`;
 });
+
+export function setWireframeConfig(cfg) {
+  currentConfig = cfg;
+}
 
 export function initViewport2D() {
   canvas = document.getElementById('canvas-2d');
@@ -137,8 +142,8 @@ function draw() {
     ctx.lineTo(x1, y1);
     ctx.lineTo(x2, y2);
     ctx.closePath();
-    ctx.strokeStyle = '#222';
-    ctx.lineWidth = 0.5 / transform.scale;
+    ctx.strokeStyle = currentConfig?.wireframe?.lineColor ?? '#222';
+    ctx.lineWidth = (currentConfig?.wireframe?.lineWidth ?? 0.5) / transform.scale;
     ctx.stroke();
   }
 

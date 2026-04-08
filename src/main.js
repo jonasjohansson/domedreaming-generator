@@ -1,12 +1,14 @@
 import { initSplitView } from './split-view.js';
 import { initViewport3D, updateDome, setMediaTexture, setCustomMesh } from './viewport-3d.js';
-import { initViewport2D, render2D, setMedia } from './viewport-2d.js';
+import { initViewport2D, render2D, setMedia, setWireframeConfig } from './viewport-2d.js';
 import { generateGeodesic } from './geodesic.js';
 import { unwrapMesh } from './unwrap.js';
 import { initGUI } from './gui.js';
 import { defaultConfig, loadConfig, saveConfig } from './config.js';
 import { loadMedia, createTexture } from './media.js';
-import { exportPNG } from './export.js';
+import { exportPNG, exportGridPNGs } from './export.js';
+import { initGridPreview, showGridPreview, hideGridPreview, isGridPreviewVisible, updateGridPreview } from './grid-preview.js';
+
 import { loadModel } from './model-loader.js';
 
 const config = loadConfig() || structuredClone(defaultConfig);
@@ -17,6 +19,7 @@ let customModel = null; // loaded 3D model mesh data
 
 function onChange() {
   saveConfig(config);
+  setWireframeConfig(config);
 
   if (customModel) {
     currentMesh = customModel;
@@ -33,6 +36,8 @@ function onChange() {
   if (currentMediaElement) {
     setMedia(currentMediaElement, currentMesh);
   }
+
+  updateGridPreview(currentUnwrapData, config);
 }
 
 function onMediaLoad(file) {
@@ -73,13 +78,31 @@ function onModelClear() {
 initSplitView();
 initViewport3D();
 initViewport2D();
-initGUI(config, onChange, {
+const viewport3d = document.getElementById('viewport-3d');
+
+// movePaneTo is set after initGUI — use a wrapper so initGridPreview can reference it
+let movePaneTo = () => {};
+initGridPreview({
+  onClose: () => movePaneTo(null),
+});
+({ movePaneTo } = initGUI(config, onChange, {
   onMediaLoad,
   onMediaClear,
   onModelLoad,
   onModelClear,
   onExport: () => exportPNG(currentUnwrapData, config, currentMediaElement, currentMesh),
-});
+  onGridExport: () => exportGridPNGs(currentUnwrapData, config, currentMediaElement, currentMesh),
+  onGridPreviewToggle: () => {
+    if (isGridPreviewVisible()) {
+      hideGridPreview();
+      movePaneTo(null); // back to default position
+    } else {
+      updateGridPreview(currentUnwrapData, config);
+      showGridPreview();
+      movePaneTo(viewport3d); // move into 3D viewport
+    }
+  },
+}));
 onChange();
 
 // Drag-and-drop support for 3D models and media
