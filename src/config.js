@@ -1,5 +1,6 @@
 export const defaultConfig = {
   geometry: {
+    shape: 'geodesic',
     frequency: 2,
     radius: 1,
     hemisphere: false,
@@ -10,6 +11,7 @@ export const defaultConfig = {
     layout: 'flower',
     clusterRotation: 0,
     seed: 1,
+    unfold: 1,
   },
   media: {
     source: '',

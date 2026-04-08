@@ -1,7 +1,11 @@
+import { SHAPES } from './shapes.js';
+
 /**
- * Generates geodesic dome geometry by subdividing an icosahedron.
+ * Generates geodesic dome geometry by subdividing an icosahedron,
+ * or returns a preset shape geometry.
  *
  * @param {Object} options
+ * @param {string} options.shape - Shape preset name (default: 'geodesic')
  * @param {number} options.frequency - Subdivision level (1-6)
  * @param {number} options.radius - Dome radius
  * @param {boolean} options.hemisphere - If true, only top half
@@ -11,12 +15,23 @@
  */
 export function generateGeodesic(options) {
   const {
+    shape = 'geodesic',
     frequency = 1,
     radius = 1,
     hemisphere = false,
     truncation = 0.5,
     rotation = 0,
   } = options || {};
+
+  // Dome is geodesic with hemisphere forced on
+  const isDome = shape === 'dome';
+  const effectiveHemisphere = isDome ? true : hemisphere;
+
+  // Non-geodesic preset shapes
+  if (shape !== 'geodesic' && !isDome && SHAPES[shape]) {
+    const base = SHAPES[shape]();
+    return finalize(base.vertices, base.faces, base.faceGroups, radius, effectiveHemisphere, truncation, rotation);
+  }
 
   // --- Icosahedron base geometry ---
   const t = (1 + Math.sqrt(5)) / 2; // golden ratio
@@ -61,7 +76,7 @@ export function generateGeodesic(options) {
 
   if (frequency === 1) {
     // No subdivision needed
-    return finalize(baseVertices, baseFaces, baseFaces.map((_, i) => i), radius, hemisphere, truncation, rotation);
+    return finalize(baseVertices, baseFaces, baseFaces.map((_, i) => i), radius, effectiveHemisphere, truncation, rotation);
   }
 
   // --- Frequency-based subdivision ---
@@ -128,7 +143,7 @@ export function generateGeodesic(options) {
     }
   }
 
-  return finalize(vertices, faces, faceGroups, radius, hemisphere, truncation, rotation);
+  return finalize(vertices, faces, faceGroups, radius, effectiveHemisphere, truncation, rotation);
 }
 
 /**

@@ -14,6 +14,8 @@ let mediaElement = null;
 let mediaMesh = null;
 let mediaUVs = null;
 let videoAnimFrameId = null;
+let unfoldT = 1;
+let meshData = null; // 3D mesh for projection
 
 // 20-color palette matching viewport-3d.js: hue = i/20, sat 65%, light 55%
 const colorPalette = Array.from({ length: 20 }, (_, i) => {
@@ -73,6 +75,11 @@ export function setMedia(element, mesh) {
   }
 }
 
+export function setUnfold(t, mesh) {
+  unfoldT = t;
+  meshData = mesh;
+}
+
 export function render2D(unwrapData) {
   if (!ctx || !canvas) return;
   lastUnwrapData = unwrapData;
@@ -83,6 +90,60 @@ export function render2D(unwrapData) {
   }
 
   draw();
+}
+
+/**
+ * Project 3D mesh faces to 2D (top-down view) scaled to match unwrap bounds.
+ * Returns a map from faceIndex to projected 2D vertices.
+ */
+function buildProjectedFaces(faces2D) {
+  if (!meshData) return null;
+  const { vertices, faces } = meshData;
+
+  // Project 3D to 2D via top-down (XZ plane)
+  const projected = {};
+  for (const face2D of faces2D) {
+    const fi = face2D.faceIndex;
+    if (fi == null || fi >= faces.length) continue;
+    const [ai, bi, ci] = faces[fi];
+    // Top-down: x → x, z → y (negated so north faces up)
+    projected[fi] = [
+      [vertices[ai][0], -vertices[ai][2]],
+      [vertices[bi][0], -vertices[bi][2]],
+      [vertices[ci][0], -vertices[ci][2]],
+    ];
+  }
+
+  // Scale projected coords to match unwrap bounds
+  const { bounds } = lastUnwrapData;
+  let pMinX = Infinity, pMinY = Infinity, pMaxX = -Infinity, pMaxY = -Infinity;
+  for (const verts of Object.values(projected)) {
+    for (const [x, y] of verts) {
+      if (x < pMinX) pMinX = x;
+      if (y < pMinY) pMinY = y;
+      if (x > pMaxX) pMaxX = x;
+      if (y > pMaxY) pMaxY = y;
+    }
+  }
+  const pW = pMaxX - pMinX || 1;
+  const pH = pMaxY - pMinY || 1;
+  const bCx = bounds.minX + bounds.width / 2;
+  const bCy = bounds.minY + bounds.height / 2;
+  const scale = Math.min(bounds.width / pW, bounds.height / pH);
+
+  for (const fi of Object.keys(projected)) {
+    const verts = projected[fi];
+    for (const v of verts) {
+      v[0] = bCx + (v[0] - (pMinX + pW / 2)) * scale;
+      v[1] = bCy + (v[1] - (pMinY + pH / 2)) * scale;
+    }
+  }
+
+  return projected;
+}
+
+function lerp2D(a, b, t) {
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
 }
 
 function draw() {
@@ -98,8 +159,24 @@ function draw() {
   ctx.translate(transform.x, transform.y);
   ctx.scale(transform.scale, transform.scale);
 
+  // Build projected 3D positions when animating
+  const t = unfoldT;
+  const proj = (t < 1 && meshData) ? buildProjectedFaces(faces2D) : null;
+
   for (const face of faces2D) {
-    const [[x0, y0], [x1, y1], [x2, y2]] = face.vertices;
+    let verts = face.vertices;
+
+    // Interpolate between projected 3D and unwrap 2D
+    if (proj && face.faceIndex != null && proj[face.faceIndex]) {
+      const p = proj[face.faceIndex];
+      verts = [
+        lerp2D(p[0], verts[0], t),
+        lerp2D(p[1], verts[1], t),
+        lerp2D(p[2], verts[2], t),
+      ];
+    }
+
+    const [[x0, y0], [x1, y1], [x2, y2]] = verts;
     const colorIndex = face.groupId % colorPalette.length;
 
     // Try media rendering if available

@@ -41,6 +41,20 @@ export function initGUI(config, onChange, callbacks = {}) {
   });
 
   const geoFolder = shapePage.addFolder({ title: 'Geodesic', expanded: true });
+  geoFolder.addBinding(config.geometry, 'shape', {
+    options: {
+      Geodesic: 'geodesic',
+      Dome: 'dome',
+      Tetrahedron: 'tetrahedron',
+      Cube: 'cube',
+      Octahedron: 'octahedron',
+      Dodecahedron: 'dodecahedron',
+      Icosahedron: 'icosahedron',
+      Cylinder: 'cylinder',
+      Cone: 'cone',
+      Torus: 'torus',
+    },
+  });
   geoFolder.addBinding(config.geometry, 'frequency', { min: 1, max: 6, step: 1 });
   geoFolder.addBinding(config.geometry, 'radius', { min: 0.1, max: 5 });
   geoFolder.addBinding(config.geometry, 'hemisphere');
@@ -53,6 +67,7 @@ export function initGUI(config, onChange, callbacks = {}) {
   });
   unwrapFolder.addBinding(config.unwrap, 'clusterRotation', { min: 0, max: Math.PI * 2 });
   unwrapFolder.addBinding(config.unwrap, 'seed', { min: 1, max: 999, step: 1, label: 'net variant' });
+  unwrapFolder.addBinding(config.unwrap, 'unfold', { min: 0, max: 1 });
 
   // --- Media tab ---
   const mediaPage = tab.pages[1];
@@ -97,6 +112,9 @@ export function initGUI(config, onChange, callbacks = {}) {
   });
   exportPage.addButton({ title: 'Export PNG' }).on('click', () => {
     if (callbacks.onExport) callbacks.onExport();
+  });
+  exportPage.addButton({ title: 'Export SVG' }).on('click', () => {
+    if (callbacks.onExportSVG) callbacks.onExportSVG();
   });
 
   // --- Config tab ---

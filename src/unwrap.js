@@ -23,8 +23,8 @@ export function unwrapMesh(options) {
     faces2D = unwrapGenericPatches(vertices, faces, faceGroups, seed);
   } else if (layout === 'connected') {
     faces2D = unwrapConnected(vertices, faces, faceGroups, seed);
-  } else if (isGeodesic && layout === 'flower' && frequency > 1) {
-    // Centered connected unfolding from north pole — complex shapes at high freq
+  } else if (layout === 'flower' && (frequency > 1 || !isGeodesic)) {
+    // Centered connected unfolding from north pole — works for both geodesic and custom models
     faces2D = unwrapCenteredFlower(vertices, faces, faceGroups, seed);
   } else if (isGeodesic && (layout === 'flower' || layout === 'strip' || layout === 'cross')) {
     // Classic 20-face layouts for freq 1
