@@ -19,6 +19,18 @@ export const defaultConfig = {
     width: 3840,
     height: 2160,
     preset: '4K',
+    transparent: false,
+  },
+  grid: {
+    rows: 3,
+    selectedCell: '1,1',
+    patternScale: 1,
+    offsetX: 0,
+    offsetY: 0,
+  },
+  wireframe: {
+    lineWidth: 0.5,
+    lineColor: '#222222',
   },
 };
 

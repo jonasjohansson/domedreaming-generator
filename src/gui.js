@@ -15,10 +15,17 @@ export function initGUI(config, onChange, callbacks = {}) {
   const pane = new Pane({ title: 'Dome Dreaming' });
   pane.registerPlugin(EssentialsPlugin);
 
+  // Find the Tweakpane root container for repositioning
+  let paneRoot = pane.element;
+  while (paneRoot.parentElement && paneRoot.parentElement !== document.body) {
+    paneRoot = paneRoot.parentElement;
+  }
+
   const tab = pane.addTab({
     pages: [
       { title: 'Shape' },
       { title: 'Media' },
+      { title: 'Grid' },
       { title: 'Export' },
       { title: 'Config' },
     ],
@@ -79,8 +86,57 @@ export function initGUI(config, onChange, callbacks = {}) {
     options: { Global: 'global', 'Per-face': 'per-face' },
   });
 
+  // --- Grid tab ---
+  const gridPage = tab.pages[2];
+
+  function buildCellOptions(rows) {
+    const opts = {};
+    for (let r = 1; r <= rows; r++) {
+      for (let c = 1; c <= 3; c++) {
+        const label = `Row ${r}, Col ${c}`;
+        opts[label] = `${r},${c}`;
+      }
+    }
+    return opts;
+  }
+
+  gridPage.addBinding(config.grid, 'rows', { min: 1, max: 10, step: 1 }).on('change', () => {
+    // Clamp selected cell if row was reduced
+    const [r] = config.grid.selectedCell.split(',').map(Number);
+    if (r > config.grid.rows) {
+      config.grid.selectedCell = `${config.grid.rows},1`;
+    }
+    // Rebuild cell dropdown
+    cellBinding.dispose();
+    cellBinding = gridPage.addBinding(config.grid, 'selectedCell', {
+      options: buildCellOptions(config.grid.rows),
+      label: 'Cell',
+    });
+    // Move before wireframe controls (index 2, after rows and before lineWidth)
+    const container = cellBinding.element.parentElement;
+    const lineWidthEl = lineWidthBinding.element;
+    if (container && lineWidthEl) container.insertBefore(cellBinding.element, lineWidthEl);
+  });
+
+  let cellBinding = gridPage.addBinding(config.grid, 'selectedCell', {
+    options: buildCellOptions(config.grid.rows),
+    label: 'Cell',
+  });
+
+  gridPage.addBinding(config.grid, 'patternScale', { min: 0.2, max: 5, step: 0.1, label: 'Pattern Scale' });
+  gridPage.addBinding(config.grid, 'offsetX', { min: -1, max: 1, step: 0.01, label: 'Offset X' });
+  gridPage.addBinding(config.grid, 'offsetY', { min: -1, max: 1, step: 0.01, label: 'Offset Y' });
+  const lineWidthBinding = gridPage.addBinding(config.wireframe, 'lineWidth', { min: 0.1, max: 5, step: 0.1, label: 'Line Width' });
+  gridPage.addBinding(config.wireframe, 'lineColor', { label: 'Line Color' });
+  gridPage.addButton({ title: 'Toggle Grid Preview' }).on('click', () => {
+    if (callbacks.onGridPreviewToggle) callbacks.onGridPreviewToggle();
+  });
+  gridPage.addButton({ title: 'Export Grid PNGs' }).on('click', () => {
+    if (callbacks.onGridExport) callbacks.onGridExport();
+  });
+
   // --- Export tab ---
-  const exportPage = tab.pages[2];
+  const exportPage = tab.pages[3];
   const widthBinding = exportPage.addBinding(config.export, 'width', { min: 100, max: 8000, step: 1 });
   const heightBinding = exportPage.addBinding(config.export, 'height', { min: 100, max: 8000, step: 1 });
   exportPage.addBinding(config.export, 'preset', {
@@ -95,12 +151,13 @@ export function initGUI(config, onChange, callbacks = {}) {
       onChange();
     }
   });
+  exportPage.addBinding(config.export, 'transparent');
   exportPage.addButton({ title: 'Export PNG' }).on('click', () => {
     if (callbacks.onExport) callbacks.onExport();
   });
 
   // --- Config tab ---
-  const configPage = tab.pages[3];
+  const configPage = tab.pages[4];
   configPage.addButton({ title: 'Save Config' }).on('click', () => {
     saveConfigToFile(config);
   });
@@ -111,6 +168,8 @@ export function initGUI(config, onChange, callbacks = {}) {
     if (loaded.unwrap) Object.assign(config.unwrap, loaded.unwrap);
     if (loaded.media) Object.assign(config.media, loaded.media);
     if (loaded.export) Object.assign(config.export, loaded.export);
+    if (loaded.grid) Object.assign(config.grid, loaded.grid);
+    if (loaded.wireframe) Object.assign(config.wireframe, loaded.wireframe);
     pane.refresh();
     onChange();
   });
@@ -120,5 +179,21 @@ export function initGUI(config, onChange, callbacks = {}) {
     onChange();
   });
 
-  return pane;
+  function movePaneTo(container) {
+    if (container) {
+      paneRoot.style.position = 'absolute';
+      paneRoot.style.top = '0';
+      paneRoot.style.right = '0';
+      paneRoot.style.zIndex = '10';
+      container.appendChild(paneRoot);
+    } else {
+      paneRoot.style.position = '';
+      paneRoot.style.top = '';
+      paneRoot.style.right = '';
+      paneRoot.style.zIndex = '';
+      document.body.appendChild(paneRoot);
+    }
+  }
+
+  return { pane, movePaneTo };
 }
