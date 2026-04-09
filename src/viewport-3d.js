@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { generateGeodesic } from './geodesic.js';
 import { computeUVs } from './media.js';
-import { getFaceColorRGB } from './colors.js';
+import { getFaceColorRGB, getColorMode } from './colors.js';
 
 let scene, camera, renderer, controls, container;
 let domeMesh, wireframeMesh;
@@ -127,10 +127,8 @@ export function updateDome(options) {
 
   // Wireframe overlay using LineSegments
   const wireGeometry = new THREE.WireframeGeometry(geometry);
-  const wireMaterial = new THREE.LineBasicMaterial({
-    color: 0x111111,
-    linewidth: 1,
-  });
+  const wireColor = getColorMode() === 'bw' ? 0x000000 : 0x111111;
+  const wireMaterial = new THREE.LineBasicMaterial({ color: wireColor, linewidth: 1 });
   wireframeMesh = new THREE.LineSegments(wireGeometry, wireMaterial);
   scene.add(wireframeMesh);
 }
@@ -195,7 +193,8 @@ export function setCustomMesh(meshData) {
   scene.add(domeMesh);
 
   const wireGeometry = new THREE.WireframeGeometry(geometry);
-  const wireMaterial = new THREE.LineBasicMaterial({ color: 0x111111, linewidth: 1 });
+  const wireColor = getColorMode() === 'bw' ? 0x000000 : 0x111111;
+  const wireMaterial = new THREE.LineBasicMaterial({ color: wireColor, linewidth: 1 });
   wireframeMesh = new THREE.LineSegments(wireGeometry, wireMaterial);
   scene.add(wireframeMesh);
 }

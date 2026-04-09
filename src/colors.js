@@ -14,13 +14,18 @@ export function getColorMode() {
 }
 
 /**
+ * Get stroke color for wireframe edges.
+ */
+export function getStrokeColor() {
+  return mode === 'bw' ? '#000000' : '#222222';
+}
+
+/**
  * Get CSS color string for a face group index.
  */
 export function getFaceColor(groupId, totalGroups = 20) {
   if (mode === 'bw') {
-    const n = Math.max(totalGroups, 1);
-    const lightness = 30 + (groupId % n) / n * 40; // 30-70% range
-    return `hsl(0, 0%, ${lightness.toFixed(1)}%)`;
+    return '#ffffff';
   }
   const n = Math.max(totalGroups, 20);
   const hue = ((groupId % n) / n) * 360;
@@ -32,9 +37,7 @@ export function getFaceColor(groupId, totalGroups = 20) {
  */
 export function getFaceColorRGB(groupId, totalGroups = 20) {
   if (mode === 'bw') {
-    const n = Math.max(totalGroups, 1);
-    const lightness = (30 + (groupId % n) / n * 40) / 100;
-    return [lightness, lightness, lightness];
+    return [1, 1, 1];
   }
   const n = Math.max(totalGroups, 20);
   const hue = (groupId % n) / n;

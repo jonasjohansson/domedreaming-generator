@@ -4,7 +4,7 @@
  */
 
 import { drawFaceMedia, computeUVs } from './media.js';
-import { getFaceColor } from './colors.js';
+import { getFaceColor, getStrokeColor } from './colors.js';
 
 let canvas, ctx, container;
 let transform = { x: 0, y: 0, scale: 1 };
@@ -207,7 +207,7 @@ function draw() {
     ctx.lineTo(x1, y1);
     ctx.lineTo(x2, y2);
     ctx.closePath();
-    ctx.strokeStyle = '#222';
+    ctx.strokeStyle = getStrokeColor();
     ctx.lineWidth = 0.5 / transform.scale;
     ctx.stroke();
   }
