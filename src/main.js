@@ -9,6 +9,7 @@ import { loadMedia, createTexture } from './media.js';
 import { exportPNG } from './export.js';
 import { exportSVG } from './export-svg.js';
 import { loadModel } from './model-loader.js';
+import { setColorMode } from './colors.js';
 
 const config = loadConfig() || structuredClone(defaultConfig);
 let currentMesh = null;
@@ -18,6 +19,7 @@ let customModel = null; // loaded 3D model mesh data
 
 function onChange() {
   saveConfig(config);
+  setColorMode(config.display.colorMode);
 
   if (customModel) {
     currentMesh = customModel;

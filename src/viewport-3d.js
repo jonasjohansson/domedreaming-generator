@@ -2,15 +2,11 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { generateGeodesic } from './geodesic.js';
 import { computeUVs } from './media.js';
+import { getFaceColorRGB } from './colors.js';
 
 let scene, camera, renderer, controls, container;
 let domeMesh, wireframeMesh;
 let currentTexture = null;
-
-// 20 distinct hues for icosahedron face groups
-const colorPalette = Array.from({ length: 20 }, (_, i) =>
-  new THREE.Color().setHSL(i / 20, 0.65, 0.55)
-);
 
 export function initViewport3D() {
   container = document.getElementById('viewport-3d');
@@ -84,10 +80,9 @@ export function updateDome(options) {
   const normalArray = new Float32Array(faces.length * 3 * 3);
   const colorArray = new Float32Array(faces.length * 3 * 3);
 
+  const numGroups = new Set(faceGroups).size;
   for (let fi = 0; fi < faces.length; fi++) {
-    const [a, b, c] = faces[fi];
-    const groupIndex = faceGroups[fi] % colorPalette.length;
-    const color = colorPalette[groupIndex];
+    const [r, g, b] = getFaceColorRGB(faceGroups[fi], numGroups);
 
     for (let vi = 0; vi < 3; vi++) {
       const vertIdx = faces[fi][vi];
@@ -101,9 +96,9 @@ export function updateDome(options) {
       normalArray[offset + 1] = normals[vertIdx][1];
       normalArray[offset + 2] = normals[vertIdx][2];
 
-      colorArray[offset] = color.r;
-      colorArray[offset + 1] = color.g;
-      colorArray[offset + 2] = color.b;
+      colorArray[offset] = r;
+      colorArray[offset + 1] = g;
+      colorArray[offset + 2] = b;
     }
   }
 
@@ -140,10 +135,6 @@ export function updateDome(options) {
   scene.add(wireframeMesh);
 }
 
-export function getScene() {
-  return scene;
-}
-
 /**
  * Display a custom mesh (from loaded 3D model) in the viewport.
  * @param {{ vertices: number[][], faces: number[][], normals: number[][], faceGroups: number[] }} meshData
@@ -165,9 +156,6 @@ export function setCustomMesh(meshData) {
 
   const { vertices, faces, normals, faceGroups } = meshData;
   const numGroups = new Set(faceGroups).size;
-  const palette = Array.from({ length: Math.max(numGroups, 20) }, (_, i) =>
-    new THREE.Color().setHSL(i / Math.max(numGroups, 20), 0.65, 0.55)
-  );
 
   const geometry = new THREE.BufferGeometry();
   const positionArray = new Float32Array(faces.length * 3 * 3);
@@ -175,8 +163,7 @@ export function setCustomMesh(meshData) {
   const colorArray = new Float32Array(faces.length * 3 * 3);
 
   for (let fi = 0; fi < faces.length; fi++) {
-    const groupIndex = faceGroups[fi] % palette.length;
-    const color = palette[groupIndex];
+    const [r, g, b] = getFaceColorRGB(faceGroups[fi], numGroups);
 
     for (let vi = 0; vi < 3; vi++) {
       const vertIdx = faces[fi][vi];
@@ -190,9 +177,9 @@ export function setCustomMesh(meshData) {
       normalArray[offset + 1] = normals[vertIdx][1];
       normalArray[offset + 2] = normals[vertIdx][2];
 
-      colorArray[offset] = color.r;
-      colorArray[offset + 1] = color.g;
-      colorArray[offset + 2] = color.b;
+      colorArray[offset] = r;
+      colorArray[offset + 1] = g;
+      colorArray[offset + 2] = b;
     }
   }
 

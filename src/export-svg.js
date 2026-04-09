@@ -3,10 +3,7 @@
  * Outputs filled triangles with wireframe strokes.
  */
 
-const colorPalette = Array.from({ length: 20 }, (_, i) => {
-  const hue = (i / 20) * 360;
-  return `hsl(${hue}, 65%, 55%)`;
-});
+import { getFaceColor } from './colors.js';
 
 export function exportSVG(unwrapData) {
   if (!unwrapData) return;
@@ -27,9 +24,8 @@ export function exportSVG(unwrapData) {
 
   for (const face of faces2D) {
     const [[x0, y0], [x1, y1], [x2, y2]] = face.vertices;
-    const colorIndex = face.groupId % colorPalette.length;
     const points = `${x0.toFixed(4)},${y0.toFixed(4)} ${x1.toFixed(4)},${y1.toFixed(4)} ${x2.toFixed(4)},${y2.toFixed(4)}`;
-    lines.push(`  <polygon points="${points}" fill="${colorPalette[colorIndex]}" stroke="#222" stroke-width="0.005"/>`);
+    lines.push(`  <polygon points="${points}" fill="${getFaceColor(face.groupId)}" stroke="#222" stroke-width="0.005"/>`);
   }
 
   lines.push(`</g>`);

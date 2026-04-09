@@ -4,12 +4,7 @@
  */
 
 import { drawFaceMedia, computeUVs } from './media.js';
-
-// Match viewport-2d.js palette exactly
-const colorPalette = Array.from({ length: 20 }, (_, i) => {
-  const hue = (i / 20) * 360;
-  return `hsl(${hue}, 65%, 55%)`;
-});
+import { getFaceColor } from './colors.js';
 
 export async function exportPNG(unwrapData, config, mediaElement, mesh) {
   if (!unwrapData) return;
@@ -61,8 +56,6 @@ export async function exportPNG(unwrapData, config, mediaElement, mesh) {
 
   for (const face of unwrapData.faces2D) {
     const [[x0, y0], [x1, y1], [x2, y2]] = face.vertices;
-    const colorIndex = face.groupId % colorPalette.length;
-
     let mediaDrawn = false;
     if (mediaSource && mediaUVs && face.faceIndex != null) {
       const fi = face.faceIndex;
@@ -86,7 +79,7 @@ export async function exportPNG(unwrapData, config, mediaElement, mesh) {
       ctx.lineTo(x1, y1);
       ctx.lineTo(x2, y2);
       ctx.closePath();
-      ctx.fillStyle = colorPalette[colorIndex];
+      ctx.fillStyle = getFaceColor(face.groupId);
       ctx.fill();
     }
 

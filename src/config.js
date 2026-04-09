@@ -17,6 +17,9 @@ export const defaultConfig = {
     source: '',
     mode: 'global',
   },
+  display: {
+    colorMode: 'color',
+  },
   export: {
     width: 3840,
     height: 2160,

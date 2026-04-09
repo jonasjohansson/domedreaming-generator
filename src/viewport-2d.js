@@ -4,6 +4,7 @@
  */
 
 import { drawFaceMedia, computeUVs } from './media.js';
+import { getFaceColor } from './colors.js';
 
 let canvas, ctx, container;
 let transform = { x: 0, y: 0, scale: 1 };
@@ -16,12 +17,6 @@ let mediaUVs = null;
 let videoAnimFrameId = null;
 let unfoldT = 1;
 let meshData = null; // 3D mesh for projection
-
-// 20-color palette matching viewport-3d.js: hue = i/20, sat 65%, light 55%
-const colorPalette = Array.from({ length: 20 }, (_, i) => {
-  const hue = (i / 20) * 360;
-  return `hsl(${hue}, 65%, 55%)`;
-});
 
 export function initViewport2D() {
   canvas = document.getElementById('canvas-2d');
@@ -177,7 +172,6 @@ function draw() {
     }
 
     const [[x0, y0], [x1, y1], [x2, y2]] = verts;
-    const colorIndex = face.groupId % colorPalette.length;
 
     // Try media rendering if available
     let mediaDrawn = false;
@@ -203,8 +197,7 @@ function draw() {
       ctx.lineTo(x2, y2);
       ctx.closePath();
 
-      // Fill
-      ctx.fillStyle = colorPalette[colorIndex];
+      ctx.fillStyle = getFaceColor(face.groupId);
       ctx.fill();
     }
 

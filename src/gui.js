@@ -61,6 +61,12 @@ export function initGUI(config, onChange, callbacks = {}) {
   geoFolder.addBinding(config.geometry, 'truncation', { min: 0, max: 1 });
   geoFolder.addBinding(config.geometry, 'rotation', { min: 0, max: Math.PI * 2 });
 
+  const displayFolder = shapePage.addFolder({ title: 'Display', expanded: true });
+  displayFolder.addBinding(config.display, 'colorMode', {
+    options: { Color: 'color', 'Black & White': 'bw' },
+    label: 'colors',
+  });
+
   const unwrapFolder = shapePage.addFolder({ title: 'Unwrap', expanded: true });
   unwrapFolder.addBinding(config.unwrap, 'layout', {
     options: { Flower: 'flower', Connected: 'connected', Islands: 'islands', Strip: 'strip', Cross: 'cross' },
@@ -127,6 +133,7 @@ export function initGUI(config, onChange, callbacks = {}) {
     if (!loaded) return;
     if (loaded.geometry) Object.assign(config.geometry, loaded.geometry);
     if (loaded.unwrap) Object.assign(config.unwrap, loaded.unwrap);
+    if (loaded.display) Object.assign(config.display, loaded.display);
     if (loaded.media) Object.assign(config.media, loaded.media);
     if (loaded.export) Object.assign(config.export, loaded.export);
     pane.refresh();
