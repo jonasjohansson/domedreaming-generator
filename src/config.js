@@ -20,6 +20,14 @@ export const defaultConfig = {
   display: {
     colorMode: 'color',
   },
+  polar: {
+    radialLines: 9,
+    rings: 5,
+    lineThickness: 2,
+    gridOpacity: 1,
+    mask: true,
+    showLabels: false,
+  },
   export: {
     width: 3840,
     height: 2160,

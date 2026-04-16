@@ -1,71 +1,83 @@
 /**
- * Split-view module — draggable divider between 3D and 2D viewports.
+ * Split-view module — N draggable dividers between N+1 viewports.
+ * Panel ratios sum to 1; dragging divider i only adjusts ratios[i] and ratios[i+1].
  */
 
-let splitRatio = 0.5; // 0..1, fraction for the left (3D) panel
+const PANEL_IDS = ['viewport-3d', 'viewport-2d', 'viewport-polar'];
+const DIVIDER_IDS = ['divider', 'divider-2'];
+const MIN = 0.06;
 
-export function getSplitRatio() {
-  return splitRatio;
+let ratios = new Array(PANEL_IDS.length).fill(1 / PANEL_IDS.length);
+
+export function getSplitRatios() {
+  return ratios.slice();
 }
 
 export function initSplitView() {
-  const viewport3d = document.getElementById('viewport-3d');
-  const divider = document.getElementById('divider');
-  const viewport2d = document.getElementById('viewport-2d');
+  const panels = PANEL_IDS.map((id) => document.getElementById(id));
+  const dividers = DIVIDER_IDS.map((id) => document.getElementById(id));
   const app = document.getElementById('app');
 
-  if (!viewport3d || !divider || !viewport2d || !app) {
+  if (panels.some((p) => !p) || dividers.some((d) => !d) || !app) {
     console.warn('split-view: required DOM elements not found');
     return;
   }
 
-  applyRatio(viewport3d, viewport2d);
+  applyRatios(panels);
 
-  let dragging = false;
+  let dragIdx = -1;
 
-  function onPointerDown(e) {
+  const onDown = (i) => (e) => {
     e.preventDefault();
-    dragging = true;
+    dragIdx = i;
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
-  }
+  };
 
-  function onPointerMove(e) {
-    if (!dragging) return;
-
+  const onMove = (e) => {
+    if (dragIdx < 0) return;
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const appRect = app.getBoundingClientRect();
-    const dividerWidth = divider.offsetWidth;
+    const dividerWidth = dividers[0].offsetWidth;
+    const dividerTotal = dividers.reduce((s, d) => s + d.offsetWidth, 0);
+    const usable = appRect.width - dividerTotal;
+    if (usable <= 0) return;
 
-    // Compute ratio, accounting for divider width
-    let ratio = (clientX - appRect.left) / (appRect.width - dividerWidth);
-    ratio = Math.max(0.2, Math.min(0.8, ratio)); // clamp 20%–80%
+    // leftSum = sum(ratios[0..dragIdx]); recover from clientX
+    const leftSum = (clientX - appRect.left - dragIdx * dividerWidth) / usable;
 
-    splitRatio = ratio;
-    applyRatio(viewport3d, viewport2d);
+    const leftSumBefore = ratios.slice(0, dragIdx + 1).reduce((a, b) => a + b, 0);
+    const leftSumMin = leftSumBefore - ratios[dragIdx] + MIN;
+    const leftSumMax = leftSumBefore + ratios[dragIdx + 1] - MIN;
 
-    window.dispatchEvent(new CustomEvent('split-resize', { detail: { ratio: splitRatio } }));
-  }
+    const newLeftSum = Math.max(leftSumMin, Math.min(leftSumMax, leftSum));
+    const delta = newLeftSum - leftSumBefore;
+    ratios[dragIdx] += delta;
+    ratios[dragIdx + 1] -= delta;
 
-  function onPointerUp() {
-    if (!dragging) return;
-    dragging = false;
+    applyRatios(panels);
+    window.dispatchEvent(new CustomEvent('split-resize', { detail: { ratios: ratios.slice() } }));
+  };
+
+  const onUp = () => {
+    if (dragIdx < 0) return;
+    dragIdx = -1;
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
-  }
+  };
 
-  // Mouse events
-  divider.addEventListener('mousedown', onPointerDown);
-  window.addEventListener('mousemove', onPointerMove);
-  window.addEventListener('mouseup', onPointerUp);
-
-  // Touch events
-  divider.addEventListener('touchstart', onPointerDown, { passive: false });
-  window.addEventListener('touchmove', onPointerMove, { passive: false });
-  window.addEventListener('touchend', onPointerUp);
+  dividers.forEach((d, i) => {
+    d.addEventListener('mousedown', onDown(i));
+    d.addEventListener('touchstart', onDown(i), { passive: false });
+  });
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
+  window.addEventListener('touchmove', onMove, { passive: false });
+  window.addEventListener('touchend', onUp);
 }
 
-function applyRatio(left, right) {
-  left.style.flex = `${splitRatio} 1 0%`;
-  right.style.flex = `${1 - splitRatio} 1 0%`;
+function applyRatios(panels) {
+  panels.forEach((p, i) => {
+    p.style.flex = `${ratios[i]} 1 0%`;
+  });
 }

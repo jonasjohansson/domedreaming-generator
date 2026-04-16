@@ -19,6 +19,7 @@ export function initGUI(config, onChange, callbacks = {}) {
     pages: [
       { title: 'Shape' },
       { title: 'Media' },
+      { title: 'Polar' },
       { title: 'Export' },
       { title: 'Config' },
     ],
@@ -100,8 +101,17 @@ export function initGUI(config, onChange, callbacks = {}) {
     options: { Global: 'global', 'Per-face': 'per-face' },
   });
 
+  // --- Polar tab ---
+  const polarPage = tab.pages[2];
+  polarPage.addBinding(config.polar, 'radialLines', { min: 0, max: 120, step: 1, label: 'radial lines' });
+  polarPage.addBinding(config.polar, 'rings', { min: 0, max: 40, step: 1 });
+  polarPage.addBinding(config.polar, 'lineThickness', { min: 0.25, max: 6, step: 0.25, label: 'thickness' });
+  polarPage.addBinding(config.polar, 'gridOpacity', { min: 0, max: 1, label: 'opacity' });
+  polarPage.addBinding(config.polar, 'mask', { label: 'cut through' });
+  polarPage.addBinding(config.polar, 'showLabels', { label: 'degree labels' });
+
   // --- Export tab ---
-  const exportPage = tab.pages[2];
+  const exportPage = tab.pages[3];
   const widthBinding = exportPage.addBinding(config.export, 'width', { min: 100, max: 8000, step: 1 });
   const heightBinding = exportPage.addBinding(config.export, 'height', { min: 100, max: 8000, step: 1 });
   exportPage.addBinding(config.export, 'preset', {
@@ -124,7 +134,7 @@ export function initGUI(config, onChange, callbacks = {}) {
   });
 
   // --- Config tab ---
-  const configPage = tab.pages[3];
+  const configPage = tab.pages[4];
   configPage.addButton({ title: 'Save Config' }).on('click', () => {
     saveConfigToFile(config);
   });
@@ -134,6 +144,7 @@ export function initGUI(config, onChange, callbacks = {}) {
     if (loaded.geometry) Object.assign(config.geometry, loaded.geometry);
     if (loaded.unwrap) Object.assign(config.unwrap, loaded.unwrap);
     if (loaded.display) Object.assign(config.display, loaded.display);
+    if (loaded.polar) Object.assign(config.polar, loaded.polar);
     if (loaded.media) Object.assign(config.media, loaded.media);
     if (loaded.export) Object.assign(config.export, loaded.export);
     pane.refresh();

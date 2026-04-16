@@ -1,6 +1,7 @@
 import { initSplitView } from './split-view.js';
 import { initViewport3D, updateDome, setMediaTexture, setCustomMesh } from './viewport-3d.js';
 import { initViewport2D, render2D, setMedia, setUnfold } from './viewport-2d.js';
+import { initViewportPolar, setPolarMedia, setPolarConfig, renderPolar } from './viewport-polar.js';
 import { generateGeodesic } from './geodesic.js';
 import { unwrapMesh } from './unwrap.js';
 import { initGUI } from './gui.js';
@@ -33,6 +34,8 @@ function onChange() {
   currentUnwrapData = unwrapMesh({ mesh: currentMesh, ...config.unwrap, isGeodesic });
   setUnfold(config.unwrap.unfold, currentMesh);
   render2D(currentUnwrapData);
+  setPolarConfig(config.polar);
+  renderPolar();
 
   // Re-apply media to updated mesh
   if (currentMediaElement) {
@@ -47,7 +50,9 @@ function onMediaLoad(file) {
     const texture = createTexture(element, type);
     setMediaTexture(texture);
     setMedia(element, currentMesh);
+    setPolarMedia(element);
     render2D(currentUnwrapData);
+    renderPolar();
   }).catch((err) => {
     console.error('Failed to load media:', err);
   });
@@ -58,7 +63,9 @@ function onMediaClear() {
   currentMediaElement = null;
   setMediaTexture(null);
   setMedia(null, null);
+  setPolarMedia(null);
   render2D(currentUnwrapData);
+  renderPolar();
 }
 
 function onModelLoad(file) {
@@ -78,6 +85,7 @@ function onModelClear() {
 initSplitView();
 initViewport3D();
 initViewport2D();
+initViewportPolar();
 initGUI(config, onChange, {
   onMediaLoad,
   onMediaClear,
@@ -87,6 +95,15 @@ initGUI(config, onChange, {
   onExportSVG: () => exportSVG(currentUnwrapData),
 });
 onChange();
+
+// Keep the polar panel re-rendering when media is a video
+function videoTick() {
+  if (currentMediaElement && currentMediaElement.tagName === 'VIDEO') {
+    renderPolar();
+  }
+  requestAnimationFrame(videoTick);
+}
+requestAnimationFrame(videoTick);
 
 // Drag-and-drop support for 3D models and media
 const MODEL_EXTS = ['glb', 'gltf', 'fbx', 'obj'];

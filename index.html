@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Dome Dreaming Generator</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%23111' stroke='%23888'/%3E%3C/svg%3E" />
   <link rel="stylesheet" href="src/style.css" />
   <script type="importmap">
   {
@@ -19,9 +20,13 @@
 <body>
   <div id="app">
     <div id="viewport-3d"></div>
-    <div id="divider"></div>
+    <div id="divider" data-divider="1"></div>
     <div id="viewport-2d">
       <canvas id="canvas-2d"></canvas>
+    </div>
+    <div id="divider-2" data-divider="2"></div>
+    <div id="viewport-polar">
+      <canvas id="canvas-polar"></canvas>
     </div>
   </div>
   <script type="module" src="src/main.js"></script>

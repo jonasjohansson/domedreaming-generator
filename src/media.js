@@ -31,11 +31,12 @@ export function loadMedia(file) {
       });
     } else {
       const img = new Image();
-      img.crossOrigin = 'anonymous';
+      // Don't set crossOrigin for blob/data URLs — they're same-origin,
+      // and some browsers reject the load when crossOrigin is set on a blob URL.
       img.onload = () => resolve({ element: img, type: 'image' });
       img.onerror = () => {
         URL.revokeObjectURL(url);
-        reject(new Error('Failed to load image'));
+        reject(new Error(`Failed to load image (${file.name}, type=${file.type || 'unknown'})`));
       };
       img.src = url;
     }
