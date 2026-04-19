@@ -4,7 +4,7 @@
  */
 
 import { drawFaceMedia, computeUVs } from './media.js';
-import { getFaceColor, getStrokeColor, getColorMode } from './colors.js';
+import { getFaceColor, getStrokeColor } from './colors.js';
 
 export async function exportPNG(unwrapData, config, mediaElement, mesh) {
   if (!unwrapData) return;
@@ -15,9 +15,7 @@ export async function exportPNG(unwrapData, config, mediaElement, mesh) {
   canvas.height = height;
   const ctx = canvas.getContext('2d');
 
-  ctx.fillStyle = getColorMode() === 'bw' ? '#ffffff' : '#1a1a1a';
-  ctx.fillRect(0, 0, width, height);
-
+  // Transparent background — export just the graphic
   const padding = Math.min(width, height) * 0.05;
   const { bounds } = unwrapData;
   if (bounds.width === 0 || bounds.height === 0) return;

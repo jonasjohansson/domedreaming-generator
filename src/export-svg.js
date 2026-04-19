@@ -3,7 +3,7 @@
  * Outputs filled triangles with wireframe strokes.
  */
 
-import { getFaceColor, getStrokeColor, getColorMode } from './colors.js';
+import { getFaceColor, getStrokeColor } from './colors.js';
 
 export function exportSVG(unwrapData) {
   if (!unwrapData) return;
@@ -11,16 +11,14 @@ export function exportSVG(unwrapData) {
   const { faces2D, bounds } = unwrapData;
   if (bounds.width === 0 || bounds.height === 0) return;
 
-  const padding = Math.min(bounds.width, bounds.height) * 0.05;
-  const svgW = bounds.width + padding * 2;
-  const svgH = bounds.height + padding * 2;
-  const ox = -bounds.minX + padding;
-  const oy = -bounds.minY + padding;
+  // Tight crop, no background fill — export just the graphic
+  const svgW = bounds.width;
+  const svgH = bounds.height;
+  const ox = -bounds.minX;
+  const oy = -bounds.minY;
 
   const lines = [];
   lines.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgW.toFixed(4)} ${svgH.toFixed(4)}">`);
-  const bg = getColorMode() === 'bw' ? '#ffffff' : '#1a1a1a';
-  lines.push(`<rect width="100%" height="100%" fill="${bg}"/>`);
   lines.push(`<g transform="translate(${ox.toFixed(4)},${oy.toFixed(4)})">`);
 
   for (const face of faces2D) {

@@ -27,6 +27,7 @@ export const defaultConfig = {
     gridOpacity: 1,
     mask: true,
     showLabels: false,
+    exportSize: 2048,
   },
   export: {
     width: 3840,

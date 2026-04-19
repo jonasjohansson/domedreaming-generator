@@ -9,6 +9,7 @@ import { defaultConfig, loadConfig, saveConfig } from './config.js';
 import { loadMedia, createTexture } from './media.js';
 import { exportPNG } from './export.js';
 import { exportSVG } from './export-svg.js';
+import { exportPolarPNG } from './export-polar.js';
 import { loadModel } from './model-loader.js';
 import { setColorMode } from './colors.js';
 
@@ -93,6 +94,7 @@ initGUI(config, onChange, {
   onModelClear,
   onExport: () => exportPNG(currentUnwrapData, config, currentMediaElement, currentMesh),
   onExportSVG: () => exportSVG(currentUnwrapData),
+  onExportPolar: () => exportPolarPNG(config, currentMediaElement),
 });
 onChange();
 

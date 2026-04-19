@@ -109,6 +109,10 @@ export function initGUI(config, onChange, callbacks = {}) {
   polarPage.addBinding(config.polar, 'gridOpacity', { min: 0, max: 1, label: 'opacity' });
   polarPage.addBinding(config.polar, 'mask', { label: 'cut through' });
   polarPage.addBinding(config.polar, 'showLabels', { label: 'degree labels' });
+  polarPage.addBinding(config.polar, 'exportSize', { min: 256, max: 8192, step: 64, label: 'export px' });
+  polarPage.addButton({ title: 'Export PNG (square)' }).on('click', () => {
+    if (callbacks.onExportPolar) callbacks.onExportPolar();
+  });
 
   // --- Export tab ---
   const exportPage = tab.pages[3];
