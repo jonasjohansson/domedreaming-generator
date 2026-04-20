@@ -113,6 +113,12 @@ export function initGUI(config, onChange, callbacks = {}) {
   polarPage.addButton({ title: 'Export PNG (square)' }).on('click', () => {
     if (callbacks.onExportPolar) callbacks.onExportPolar();
   });
+  polarPage.addButton({ title: 'Export Grid PNG (mask)' }).on('click', () => {
+    if (callbacks.onExportPolarGrid) callbacks.onExportPolarGrid();
+  });
+  polarPage.addButton({ title: 'Export Grid SVG' }).on('click', () => {
+    if (callbacks.onExportPolarGridSVG) callbacks.onExportPolarGridSVG();
+  });
 
   // --- Export tab ---
   const exportPage = tab.pages[3];
