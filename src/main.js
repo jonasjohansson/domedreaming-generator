@@ -13,6 +13,7 @@ import { exportPNG } from './export.js';
 import { exportSVG } from './export-svg.js';
 import { exportPolarPNG, exportPolarGridPNG, exportPolarGridSVG } from './export-polar.js';
 import { exportTitlecardPNG, exportTitlecardSVG } from './export-titlecard.js';
+import { exportTitlecardBatchZip } from './export-titlecard-batch.js';
 import { loadModel } from './model-loader.js';
 import { setColorMode } from './colors.js';
 
@@ -109,6 +110,25 @@ initGUI(config, onChange, {
   onTitlecardImagesClear: () => clearTitlecardImages(),
   onTitlecardFestivalImagesLoad: () => {
     loadTitlecardImageUrls(FESTIVAL_IMAGE_PATHS);
+  },
+  onExportTitlecardBatch: async () => {
+    let entries;
+    try {
+      entries = JSON.parse(config.titlecard.batch.json || '[]');
+    } catch (err) {
+      alert('Batch JSON is invalid: ' + err.message);
+      return;
+    }
+    if (!Array.isArray(entries) || !entries.length) {
+      alert('Batch JSON must be a non-empty array.');
+      return;
+    }
+    try {
+      await exportTitlecardBatchZip(config, entries);
+    } catch (err) {
+      console.error(err);
+      alert('Batch export failed: ' + err.message);
+    }
   },
 });
 

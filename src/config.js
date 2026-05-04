@@ -44,13 +44,16 @@ export const defaultConfig = {
       thresholdLevel: 0.5,
       blackToAlpha: false,
     },
+    batch: {
+      json: '[\n  {"a":"AGNIESZKA","b":"POLSKA","t":"THE HAPPIEST THOUGHT"},\n  {"a":"ARI","b":"DYKIER","t":"DREAM"}\n]',
+    },
     texts: [
-      { content: 'DOME DREAMING', ring: 4, sector: 12, fontSize: 100, font: 'OffBit', cellMode: true, charsPerCell: 1, flipX: false, flipY: false },
-      { content: 'FULLDOME FILM FESTIVAL', ring: 5, sector: 7, fontSize: 100, font: 'OffBit', cellMode: true, charsPerCell: 1, flipX: false, flipY: false },
-      { content: '', ring: 3, sector: 0, fontSize: 100, font: 'OffBit', cellMode: true, charsPerCell: 1, flipX: false, flipY: false },
-      { content: '', ring: 2, sector: 0, fontSize: 100, font: 'OffBit', cellMode: true, charsPerCell: 1, flipX: false, flipY: false },
-      { content: '', ring: 1, sector: 0, fontSize: 100, font: 'OffBit', cellMode: true, charsPerCell: 1, flipX: false, flipY: false },
-      { content: '', ring: 1, sector: 0, fontSize: 100, font: 'OffBit', cellMode: true, charsPerCell: 1, flipX: false, flipY: false },
+      { content: 'DOME DREAMING', ring: 4, sector: 12, fontSize: 100, font: 'OffBit', cellMode: true, charsPerCell: 1, flipX: true, flipY: true},
+      { content: 'FULLDOME FILM FESTIVAL', ring: 5, sector: 7, fontSize: 100, font: 'OffBit', cellMode: true, charsPerCell: 1, flipX: true, flipY: true},
+      { content: '', ring: 3, sector: 0, fontSize: 100, font: 'OffBit', cellMode: true, charsPerCell: 1, flipX: true, flipY: true},
+      { content: '', ring: 2, sector: 0, fontSize: 100, font: 'OffBit', cellMode: true, charsPerCell: 1, flipX: true, flipY: true},
+      { content: '', ring: 1, sector: 0, fontSize: 100, font: 'OffBit', cellMode: true, charsPerCell: 1, flipX: true, flipY: true},
+      { content: '', ring: 1, sector: 0, fontSize: 100, font: 'OffBit', cellMode: true, charsPerCell: 1, flipX: true, flipY: true},
     ],
   },
   export: {

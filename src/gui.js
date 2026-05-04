@@ -187,6 +187,37 @@ export function initGUI(config, onChange, callbacks = {}) {
     if (callbacks.onExportTitlecardSVG) callbacks.onExportTitlecardSVG();
   });
 
+  // Batch export — load a .json file from disk (a/b/t per entry), then
+  // hit Export Batch ZIP to render one PNG per entry into a single zip.
+  // Text 1 ← a, Text 2 ← b, Text 3 ← t. Image-card seed += entry index
+  // so each card gets a different layout from the same image set.
+  const tcBatch = tcPage.addFolder({ title: 'Batch (a/b/t → Text 1/2/3)', expanded: false });
+  const batchStatus = { text: 'Using built-in example (2 entries)' };
+  const statusBinding = tcBatch.addBinding(batchStatus, 'text', { readonly: true, label: 'status' });
+  tcBatch.addButton({ title: 'Load Batch JSON file' }).on('click', () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,application/json';
+    input.onchange = async () => {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      const text = await file.text();
+      try {
+        const parsed = JSON.parse(text);
+        if (!Array.isArray(parsed)) throw new Error('not an array');
+        config.titlecard.batch.json = text;
+        batchStatus.text = `Loaded ${file.name} (${parsed.length} entries)`;
+      } catch (err) {
+        batchStatus.text = `Invalid JSON: ${err.message}`;
+      }
+      statusBinding.refresh();
+    };
+    input.click();
+  });
+  tcBatch.addButton({ title: 'Export Batch ZIP' }).on('click', () => {
+    if (callbacks.onExportTitlecardBatch) callbacks.onExportTitlecardBatch();
+  });
+
   // --- Export tab ---
   const exportPage = tab.pages[4];
   const widthBinding = exportPage.addBinding(config.export, 'width', { min: 100, max: 8000, step: 1 });
@@ -233,6 +264,46 @@ export function initGUI(config, onChange, callbacks = {}) {
   pane.on('change', () => {
     onChange();
   });
+
+  // View-aware tabs: hide GUI tabs whose target panels aren't visible.
+  // Tabs in declaration order: 0 Shape, 1 Media, 2 Polar, 3 Title Card,
+  // 4 Export, 5 Config. Export + Config always shown.
+  function applyTabVisibility() {
+    const shown = (id) => {
+      const el = document.getElementById(id);
+      return el && !el.classList.contains('panel-hidden');
+    };
+    const has3d = shown('viewport-3d');
+    const has2d = shown('viewport-2d');
+    const hasPolar = shown('viewport-polar');
+    const hasTC = shown('viewport-titlecard');
+
+    const visibility = [
+      has3d || has2d,                     // Shape — drives geometry seen in 3D/2D
+      has3d || has2d || hasPolar,         // Media — drives backdrop seen in 3D/2D/Polar
+      hasPolar,                           // Polar
+      hasTC,                              // Title Card
+      true,                               // Export
+      true,                               // Config
+    ];
+
+    const tabButtons = pane.element.querySelectorAll('.tp-tbiv');
+    tabButtons.forEach((btn, i) => {
+      btn.style.display = visibility[i] ? '' : 'none';
+    });
+
+    // If the currently active tab got hidden, switch to the first visible one.
+    const active = Array.from(tabButtons).findIndex((b) => b.classList.contains('tp-tbiv-sel'));
+    if (active >= 0 && !visibility[active]) {
+      const firstVisible = visibility.findIndex(Boolean);
+      if (firstVisible >= 0 && tab.pages[firstVisible]) {
+        tab.pages[firstVisible].selected = true;
+      }
+    }
+  }
+
+  applyTabVisibility();
+  window.addEventListener('split-resize', applyTabVisibility);
 
   return pane;
 }
