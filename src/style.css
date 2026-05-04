@@ -194,6 +194,13 @@ body {
   color: #fff;
 }
 
+/* Tweakpane — make the floating pane scrollable when it overflows */
+.tp-dfwv {
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 /* Drag-and-drop overlay */
 body.drag-over::after {
   content: 'Drop 3D model or media file';
