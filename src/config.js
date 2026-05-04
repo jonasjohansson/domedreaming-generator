@@ -29,6 +29,22 @@ export const defaultConfig = {
     showLabels: false,
     exportSize: 2048,
   },
+  titlecard: {
+    radialLines: 36,
+    rings: 5,
+    lineThickness: 2,
+    gridOpacity: 1,
+    bgTransparent: false,
+    exportSize: 2048,
+    texts: [
+      { content: 'DOME DREAMING', ring: 4, sector: 12, fontSize: 100, font: 'OffBit', cellMode: true, charsPerCell: 1, flipX: false, flipY: false },
+      { content: 'FULLDOME FILM FESTIVAL', ring: 5, sector: 7, fontSize: 100, font: 'OffBit', cellMode: true, charsPerCell: 1, flipX: false, flipY: false },
+      { content: '', ring: 3, sector: 0, fontSize: 100, font: 'OffBit', cellMode: true, charsPerCell: 1, flipX: false, flipY: false },
+      { content: '', ring: 2, sector: 0, fontSize: 100, font: 'OffBit', cellMode: true, charsPerCell: 1, flipX: false, flipY: false },
+      { content: '', ring: 1, sector: 0, fontSize: 100, font: 'OffBit', cellMode: true, charsPerCell: 1, flipX: false, flipY: false },
+      { content: '', ring: 1, sector: 0, fontSize: 100, font: 'OffBit', cellMode: true, charsPerCell: 1, flipX: false, flipY: false },
+    ],
+  },
   export: {
     width: 3840,
     height: 2160,

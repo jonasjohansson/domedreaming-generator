@@ -2,6 +2,7 @@ import { initSplitView } from './split-view.js';
 import { initViewport3D, updateDome, setMediaTexture, setCustomMesh } from './viewport-3d.js';
 import { initViewport2D, render2D, setMedia, setUnfold } from './viewport-2d.js';
 import { initViewportPolar, setPolarMedia, setPolarConfig, renderPolar } from './viewport-polar.js';
+import { initViewportTitlecard, setTitlecardConfig, renderTitlecard } from './viewport-titlecard.js';
 import { generateGeodesic } from './geodesic.js';
 import { unwrapMesh } from './unwrap.js';
 import { initGUI } from './gui.js';
@@ -10,6 +11,7 @@ import { loadMedia, createTexture } from './media.js';
 import { exportPNG } from './export.js';
 import { exportSVG } from './export-svg.js';
 import { exportPolarPNG, exportPolarGridPNG, exportPolarGridSVG } from './export-polar.js';
+import { exportTitlecardPNG, exportTitlecardSVG } from './export-titlecard.js';
 import { loadModel } from './model-loader.js';
 import { setColorMode } from './colors.js';
 
@@ -37,6 +39,8 @@ function onChange() {
   render2D(currentUnwrapData);
   setPolarConfig(config.polar);
   renderPolar();
+  setTitlecardConfig(config.titlecard);
+  renderTitlecard();
 
   // Re-apply media to updated mesh
   if (currentMediaElement) {
@@ -87,6 +91,7 @@ initSplitView();
 initViewport3D();
 initViewport2D();
 initViewportPolar();
+initViewportTitlecard();
 initGUI(config, onChange, {
   onMediaLoad,
   onMediaClear,
@@ -97,8 +102,20 @@ initGUI(config, onChange, {
   onExportPolar: () => exportPolarPNG(config, currentMediaElement),
   onExportPolarGrid: () => exportPolarGridPNG(config),
   onExportPolarGridSVG: () => exportPolarGridSVG(config),
+  onExportTitlecard: () => exportTitlecardPNG(config),
+  onExportTitlecardSVG: () => exportTitlecardSVG(config),
 });
 onChange();
+
+// Force-load all title-card fonts before re-rendering. Canvas falls back to
+// monospace for any face that hasn't been loaded by the document, so we
+// explicitly request each one.
+const TC_FONTS = ['OffBit', 'OffBit-101', 'OffBit-Dot', 'OffBit-Bar', 'OPSPastPerfect'];
+if (document.fonts && document.fonts.load) {
+  Promise.all(TC_FONTS.map((f) => document.fonts.load(`16px "${f}"`)))
+    .then(() => renderTitlecard())
+    .catch(() => renderTitlecard());
+}
 
 // Keep the polar panel re-rendering when media is a video
 function videoTick() {

@@ -20,10 +20,19 @@ export function initGUI(config, onChange, callbacks = {}) {
       { title: 'Shape' },
       { title: 'Media' },
       { title: 'Polar' },
+      { title: 'Title Card' },
       { title: 'Export' },
       { title: 'Config' },
     ],
   });
+
+  const FONT_OPTIONS = {
+    OffBit: 'OffBit',
+    'OffBit-101': 'OffBit-101',
+    'OffBit-Dot': 'OffBit-Dot',
+    'OffBit-Bar': 'OffBit-Bar',
+    'OPS Past Perfect': 'OPSPastPerfect',
+  };
 
   // --- Shape tab (Geometry + Unwrap) ---
   const shapePage = tab.pages[0];
@@ -120,8 +129,39 @@ export function initGUI(config, onChange, callbacks = {}) {
     if (callbacks.onExportPolarGridSVG) callbacks.onExportPolarGridSVG();
   });
 
+  // --- Title Card tab ---
+  const tcPage = tab.pages[3];
+  const tcGrid = tcPage.addFolder({ title: 'Grid', expanded: true });
+  tcGrid.addBinding(config.titlecard, 'radialLines', { min: 1, max: 64, step: 1, label: 'radial lines' });
+  tcGrid.addBinding(config.titlecard, 'rings', { min: 1, max: 16, step: 1 });
+  tcGrid.addBinding(config.titlecard, 'lineThickness', { min: 0.25, max: 6, step: 0.25, label: 'thickness' });
+  tcGrid.addBinding(config.titlecard, 'gridOpacity', { min: 0, max: 1, label: 'opacity' });
+  tcGrid.addBinding(config.titlecard, 'bgTransparent', { label: 'transparent bg' });
+
+  for (let i = 0; i < config.titlecard.texts.length; i++) {
+    const folder = tcPage.addFolder({ title: `Text ${i + 1}`, expanded: i < 2 });
+    const tc = config.titlecard.texts[i];
+    folder.addBinding(tc, 'content', { label: 'text' });
+    folder.addBinding(tc, 'ring', { min: 1, max: 16, step: 1 });
+    folder.addBinding(tc, 'sector', { min: 0, max: 64, step: 1 });
+    folder.addBinding(tc, 'fontSize', { min: 10, max: 400, step: 1, label: 'font size' });
+    folder.addBinding(tc, 'font', { options: FONT_OPTIONS });
+    folder.addBinding(tc, 'cellMode', { label: 'cell mode' });
+    folder.addBinding(tc, 'charsPerCell', { min: 1, max: 4, step: 1, label: 'chars/cell' });
+    folder.addBinding(tc, 'flipX', { label: 'flip X' });
+    folder.addBinding(tc, 'flipY', { label: 'flip Y' });
+  }
+
+  tcPage.addBinding(config.titlecard, 'exportSize', { min: 256, max: 8192, step: 64, label: 'export px' });
+  tcPage.addButton({ title: 'Export Title Card PNG' }).on('click', () => {
+    if (callbacks.onExportTitlecard) callbacks.onExportTitlecard();
+  });
+  tcPage.addButton({ title: 'Export Title Card SVG' }).on('click', () => {
+    if (callbacks.onExportTitlecardSVG) callbacks.onExportTitlecardSVG();
+  });
+
   // --- Export tab ---
-  const exportPage = tab.pages[3];
+  const exportPage = tab.pages[4];
   const widthBinding = exportPage.addBinding(config.export, 'width', { min: 100, max: 8000, step: 1 });
   const heightBinding = exportPage.addBinding(config.export, 'height', { min: 100, max: 8000, step: 1 });
   exportPage.addBinding(config.export, 'preset', {
@@ -144,7 +184,7 @@ export function initGUI(config, onChange, callbacks = {}) {
   });
 
   // --- Config tab ---
-  const configPage = tab.pages[4];
+  const configPage = tab.pages[5];
   configPage.addButton({ title: 'Save Config' }).on('click', () => {
     saveConfigToFile(config);
   });
@@ -155,6 +195,7 @@ export function initGUI(config, onChange, callbacks = {}) {
     if (loaded.unwrap) Object.assign(config.unwrap, loaded.unwrap);
     if (loaded.display) Object.assign(config.display, loaded.display);
     if (loaded.polar) Object.assign(config.polar, loaded.polar);
+    if (loaded.titlecard) Object.assign(config.titlecard, loaded.titlecard);
     if (loaded.media) Object.assign(config.media, loaded.media);
     if (loaded.export) Object.assign(config.export, loaded.export);
     pane.refresh();

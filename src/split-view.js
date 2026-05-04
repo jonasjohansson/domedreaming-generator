@@ -1,10 +1,20 @@
 /**
  * Split-view module — N draggable dividers between N+1 viewports.
  * Panel ratios sum to 1; dragging divider i only adjusts ratios[i] and ratios[i+1].
+ *
+ * Panels can be individually hidden via .panel-hidden — the divider before
+ * the hidden panel is also hidden, and ratios are renormalized over the
+ * remaining visible panels. Tabs at the bottom restore hidden panels.
  */
 
-const PANEL_IDS = ['viewport-3d', 'viewport-2d', 'viewport-polar'];
-const DIVIDER_IDS = ['divider', 'divider-2'];
+const PANEL_LABELS = {
+  'viewport-3d': '3D',
+  'viewport-2d': '2D Net',
+  'viewport-polar': 'Polar',
+  'viewport-titlecard': 'Title Card',
+};
+const PANEL_IDS = ['viewport-3d', 'viewport-2d', 'viewport-polar', 'viewport-titlecard'];
+const DIVIDER_IDS = ['divider', 'divider-2', 'divider-3'];
 const MIN = 0.06;
 
 let ratios = new Array(PANEL_IDS.length).fill(1 / PANEL_IDS.length);
@@ -17,13 +27,26 @@ export function initSplitView() {
   const panels = PANEL_IDS.map((id) => document.getElementById(id));
   const dividers = DIVIDER_IDS.map((id) => document.getElementById(id));
   const app = document.getElementById('app');
+  const tabsContainer = document.getElementById('panel-tabs');
 
   if (panels.some((p) => !p) || dividers.some((d) => !d) || !app) {
     console.warn('split-view: required DOM elements not found');
     return;
   }
 
-  applyRatios(panels);
+  applyLayout(panels, dividers, tabsContainer);
+
+  // Wire collapse buttons
+  document.querySelectorAll('.panel-toggle').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-panel');
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.classList.add('panel-hidden');
+      applyLayout(panels, dividers, tabsContainer);
+      window.dispatchEvent(new CustomEvent('split-resize'));
+    });
+  });
 
   let dragIdx = -1;
 
@@ -38,24 +61,42 @@ export function initSplitView() {
     if (dragIdx < 0) return;
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const appRect = app.getBoundingClientRect();
-    const dividerWidth = dividers[0].offsetWidth;
-    const dividerTotal = dividers.reduce((s, d) => s + d.offsetWidth, 0);
+
+    const visibleIdx = panels
+      .map((p, i) => (p.classList.contains('panel-hidden') ? -1 : i))
+      .filter((i) => i >= 0);
+    const visibleDividers = dividers.filter((d) => !d.classList.contains('panel-hidden'));
+    const dividerWidth = visibleDividers[0] ? visibleDividers[0].offsetWidth : 6;
+    const dividerTotal = visibleDividers.reduce((s, d) => s + d.offsetWidth, 0);
     const usable = appRect.width - dividerTotal;
     if (usable <= 0) return;
 
-    // leftSum = sum(ratios[0..dragIdx]); recover from clientX
-    const leftSum = (clientX - appRect.left - dragIdx * dividerWidth) / usable;
+    // dragIdx is the divider's index among ALL dividers; map to visible-index
+    const visibleDividerIdx = visibleDividers.indexOf(dividers[dragIdx]);
+    if (visibleDividerIdx < 0) return;
 
-    const leftSumBefore = ratios.slice(0, dragIdx + 1).reduce((a, b) => a + b, 0);
-    const leftSumMin = leftSumBefore - ratios[dragIdx] + MIN;
-    const leftSumMax = leftSumBefore + ratios[dragIdx + 1] - MIN;
+    // Sum of visible-panel ratios up to and including the panel left of this divider
+    const leftPanels = visibleIdx.slice(0, visibleDividerIdx + 1);
+    const rightPanel = visibleIdx[visibleDividerIdx + 1];
+    if (rightPanel === undefined) return;
 
-    const newLeftSum = Math.max(leftSumMin, Math.min(leftSumMax, leftSum));
+    const leftSumBefore = leftPanels.reduce((a, i) => a + ratios[i], 0);
+    const leftRatio = ratios[leftPanels[leftPanels.length - 1]];
+    const rightRatio = ratios[rightPanel];
+
+    const visibleSum = visibleIdx.reduce((a, i) => a + ratios[i], 0);
+    const leftSumNorm = (clientX - appRect.left - visibleDividerIdx * dividerWidth) / usable;
+    const targetLeftSum = leftSumNorm * visibleSum;
+
+    const minLeftSum = leftSumBefore - leftRatio + MIN * visibleSum;
+    const maxLeftSum = leftSumBefore + rightRatio - MIN * visibleSum;
+    const newLeftSum = Math.max(minLeftSum, Math.min(maxLeftSum, targetLeftSum));
     const delta = newLeftSum - leftSumBefore;
-    ratios[dragIdx] += delta;
-    ratios[dragIdx + 1] -= delta;
 
-    applyRatios(panels);
+    ratios[leftPanels[leftPanels.length - 1]] += delta;
+    ratios[rightPanel] -= delta;
+
+    applyLayout(panels, dividers, tabsContainer);
     window.dispatchEvent(new CustomEvent('split-resize', { detail: { ratios: ratios.slice() } }));
   };
 
@@ -76,8 +117,43 @@ export function initSplitView() {
   window.addEventListener('touchend', onUp);
 }
 
-function applyRatios(panels) {
+function showPanel(panels, dividers, tabsContainer, panelId) {
+  const el = document.getElementById(panelId);
+  if (!el) return;
+  el.classList.remove('panel-hidden');
+  applyLayout(panels, dividers, tabsContainer);
+  window.dispatchEvent(new CustomEvent('split-resize'));
+}
+
+function applyLayout(panels, dividers, tabsContainer) {
+  const visible = panels.map((p) => !p.classList.contains('panel-hidden'));
+  const visibleSum = visible.reduce((s, v, i) => s + (v ? ratios[i] : 0), 0) || 1;
+
   panels.forEach((p, i) => {
-    p.style.flex = `${ratios[i]} 1 0%`;
+    if (visible[i]) {
+      const r = ratios[i] / visibleSum;
+      p.style.flex = `${r} 1 0%`;
+    } else {
+      p.style.flex = '0 0 0';
+    }
   });
+
+  // A divider is shown only if there is at least one visible panel on each side.
+  dividers.forEach((d, i) => {
+    const leftVisible = visible.slice(0, i + 1).some(Boolean);
+    const rightVisible = visible.slice(i + 1).some(Boolean);
+    d.classList.toggle('panel-hidden', !(leftVisible && rightVisible));
+  });
+
+  // Rebuild tabs for hidden panels
+  if (tabsContainer) {
+    tabsContainer.innerHTML = '';
+    panels.forEach((p, i) => {
+      if (visible[i]) return;
+      const btn = document.createElement('button');
+      btn.textContent = `Show ${PANEL_LABELS[PANEL_IDS[i]] || PANEL_IDS[i]}`;
+      btn.addEventListener('click', () => showPanel(panels, dividers, tabsContainer, PANEL_IDS[i]));
+      tabsContainer.appendChild(btn);
+    });
+  }
 }
