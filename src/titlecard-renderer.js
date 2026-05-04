@@ -1,10 +1,12 @@
 /**
- * Title-card renderer — polar grid + curved text.
- * Text is laid out in cells (each character occupies one sector slot on a ring),
- * or along a smooth arc with letter spacing in radians.
+ * Title-card renderer — polar grid + image-card cells + curved text.
+ * Image cards are placed randomly within the grid using a seeded RNG so the
+ * same {seed, count, image set} produces the same layout every render
+ * (viewport and PNG export stay in sync).
  */
 
 import { getColorMode } from './colors.js';
+import { getImages, makeRng } from './titlecard-images.js';
 
 export function drawTitlecardAt(ctx, cx, cy, radius, config) {
   if (radius <= 0) return;
@@ -14,6 +16,7 @@ export function drawTitlecardAt(ctx, cx, cy, radius, config) {
     lineThickness = 2,
     gridOpacity = 1,
     bgTransparent = false,
+    imageCards = {},
     texts = [],
   } = config || {};
 
@@ -21,6 +24,7 @@ export function drawTitlecardAt(ctx, cx, cy, radius, config) {
   const fg = bw ? '#000000' : '#ffffff';
   const bg = bw ? '#ffffff' : '#000000';
 
+  // Background circle
   if (!bgTransparent) {
     ctx.save();
     ctx.beginPath();
@@ -30,6 +34,17 @@ export function drawTitlecardAt(ctx, cx, cy, radius, config) {
     ctx.restore();
   }
 
+  // Image cards (clipped to grid circle)
+  if (imageCards && imageCards.enabled !== false) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.clip();
+    drawImageCards(ctx, cx, cy, radius, rings, radialLines, imageCards);
+    ctx.restore();
+  }
+
+  // Grid
   ctx.save();
   ctx.translate(cx, cy);
   ctx.strokeStyle = fg;
@@ -52,12 +67,150 @@ export function drawTitlecardAt(ctx, cx, cy, radius, config) {
   }
   ctx.restore();
 
+  // Text
   ctx.save();
   ctx.globalAlpha = 1;
   for (const t of texts) {
     if (!t || !t.content) continue;
     drawTextOnRing(ctx, cx, cy, radius, rings, radialLines, t, fg);
   }
+  ctx.restore();
+}
+
+function drawImageCards(ctx, cx, cy, radius, rings, numSectors, imageCardsCfg) {
+  const images = getImages();
+  if (!images.length) return;
+
+  const {
+    count = 8,
+    seed = 1,
+    threshold = false,
+    thresholdLevel = 0.5,
+    blackToAlpha = false,
+  } = imageCardsCfg;
+
+  const rng = makeRng(seed);
+  // Shuffle image list deterministically
+  const order = images.map((_, i) => i);
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+
+  const ringStep = radius / rings;
+  const sectorAngle = (2 * Math.PI) / numSectors;
+  const target = Math.min(count, images.length);
+  const used = new Set();
+
+  for (let placed = 0; placed < target;) {
+    const imgEntry = images[order[placed % order.length]];
+    if (!imgEntry || !imgEntry.img.complete) { placed++; continue; }
+
+    const sizeRoll = rng();
+    let ringSpan, sectorSpan;
+    if (sizeRoll > 0.7) {
+      ringSpan = Math.min(3, rings);
+      sectorSpan = 4 + Math.floor(rng() * 2);
+    } else if (sizeRoll > 0.4) {
+      ringSpan = Math.min(2 + Math.floor(rng() * 2), rings);
+      sectorSpan = 3 + Math.floor(rng() * 2);
+    } else {
+      ringSpan = Math.min(2, rings);
+      sectorSpan = 2 + Math.floor(rng() * 2);
+    }
+
+    let attempts = 0;
+    let success = false;
+    while (attempts < 80 && !success) {
+      const ring = 1 + Math.floor(rng() * Math.max(1, rings - ringSpan + 1));
+      const sector = Math.floor(rng() * numSectors);
+      if (ring + ringSpan - 1 > rings) { attempts++; continue; }
+
+      let conflict = false;
+      for (let r = 0; r < ringSpan && !conflict; r++) {
+        for (let s = 0; s < sectorSpan && !conflict; s++) {
+          const k = `${ring + r}-${(sector + s) % numSectors}`;
+          if (used.has(k)) conflict = true;
+        }
+      }
+      if (conflict) { attempts++; continue; }
+
+      for (let r = 0; r < ringSpan; r++) {
+        for (let s = 0; s < sectorSpan; s++) {
+          used.add(`${ring + r}-${(sector + s) % numSectors}`);
+        }
+      }
+
+      const innerRadius = ringStep * (ring - 1);
+      const outerRadius = ringStep * (ring + ringSpan - 1);
+      const startAngle = sector * sectorAngle - Math.PI / 2;
+      const endAngle = startAngle + sectorSpan * sectorAngle;
+
+      drawImageInCell(ctx, imgEntry.img, cx, cy, innerRadius, outerRadius, startAngle, endAngle, threshold, thresholdLevel, blackToAlpha);
+
+      success = true;
+    }
+    placed++;
+  }
+}
+
+function drawImageInCell(ctx, img, cx, cy, innerR, outerR, startAngle, endAngle, applyThreshold, thresholdLevel, blackToAlpha) {
+  if (!img || !img.complete || !img.naturalWidth) return;
+
+  ctx.save();
+
+  // Clip to the polar wedge
+  ctx.beginPath();
+  ctx.arc(cx, cy, outerR, startAngle, endAngle);
+  ctx.arc(cx, cy, innerR, endAngle, startAngle, true);
+  ctx.closePath();
+  ctx.clip();
+
+  const midAngle = (startAngle + endAngle) / 2;
+  const midRadius = (innerR + outerR) / 2;
+  const cellHeight = outerR - innerR;
+  const cellWidth = (endAngle - startAngle) * midRadius;
+
+  const ccx = cx + Math.cos(midAngle) * midRadius;
+  const ccy = cy + Math.sin(midAngle) * midRadius;
+
+  const imgAspect = img.naturalWidth / img.naturalHeight;
+  const cellAspect = cellWidth / cellHeight;
+  let drawW, drawH;
+  if (imgAspect > cellAspect) {
+    drawH = cellHeight * 1.4;
+    drawW = drawH * imgAspect;
+  } else {
+    drawW = cellWidth * 1.4;
+    drawH = drawW / imgAspect;
+  }
+
+  ctx.translate(ccx, ccy);
+  ctx.rotate(midAngle - Math.PI / 2);
+  ctx.scale(1, -1);
+
+  if (applyThreshold) {
+    const tempSize = Math.max(drawW, drawH) * 1.5;
+    const tmp = document.createElement('canvas');
+    tmp.width = Math.max(2, Math.round(tempSize));
+    tmp.height = Math.max(2, Math.round(tempSize));
+    const tctx = tmp.getContext('2d');
+    tctx.drawImage(img, 0, 0, tmp.width, tmp.height);
+    const id = tctx.getImageData(0, 0, tmp.width, tmp.height);
+    const d = id.data;
+    const t = thresholdLevel * 255;
+    for (let i = 0; i < d.length; i += 4) {
+      const gray = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+      const v = gray > t ? 255 : 0;
+      d[i] = v; d[i + 1] = v; d[i + 2] = v;
+      if (blackToAlpha && v === 0) d[i + 3] = 0;
+    }
+    tctx.putImageData(id, 0, 0);
+    ctx.drawImage(tmp, -drawW / 2, -drawH / 2, drawW, drawH);
+  } else {
+    ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
+  }
+
   ctx.restore();
 }
 

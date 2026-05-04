@@ -16,8 +16,32 @@ const PANEL_LABELS = {
 const PANEL_IDS = ['viewport-3d', 'viewport-2d', 'viewport-polar', 'viewport-titlecard'];
 const DIVIDER_IDS = ['divider', 'divider-2', 'divider-3'];
 const MIN = 0.06;
+const STORE_KEY = 'domedreaming-split-view';
 
 let ratios = new Array(PANEL_IDS.length).fill(1 / PANEL_IDS.length);
+let hiddenSet = new Set();
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (Array.isArray(data.ratios) && data.ratios.length === PANEL_IDS.length) {
+      const sum = data.ratios.reduce((a, b) => a + b, 0);
+      if (sum > 0) ratios = data.ratios.map((r) => r / sum);
+    }
+    if (Array.isArray(data.hidden)) hiddenSet = new Set(data.hidden);
+  } catch { /* ignore */ }
+}
+
+function saveState() {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify({
+      ratios,
+      hidden: Array.from(hiddenSet),
+    }));
+  } catch { /* ignore */ }
+}
 
 export function getSplitRatios() {
   return ratios.slice();
@@ -34,6 +58,12 @@ export function initSplitView() {
     return;
   }
 
+  loadState();
+  // Apply persisted hidden state to DOM
+  panels.forEach((p, i) => {
+    p.classList.toggle('panel-hidden', hiddenSet.has(PANEL_IDS[i]));
+  });
+
   applyLayout(panels, dividers, tabsContainer);
 
   // Wire collapse buttons
@@ -43,6 +73,8 @@ export function initSplitView() {
       const el = document.getElementById(id);
       if (!el) return;
       el.classList.add('panel-hidden');
+      hiddenSet.add(id);
+      saveState();
       applyLayout(panels, dividers, tabsContainer);
       window.dispatchEvent(new CustomEvent('split-resize'));
     });
@@ -105,6 +137,7 @@ export function initSplitView() {
     dragIdx = -1;
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
+    saveState();
   };
 
   dividers.forEach((d, i) => {
@@ -121,6 +154,8 @@ function showPanel(panels, dividers, tabsContainer, panelId) {
   const el = document.getElementById(panelId);
   if (!el) return;
   el.classList.remove('panel-hidden');
+  hiddenSet.delete(panelId);
+  saveState();
   applyLayout(panels, dividers, tabsContainer);
   window.dispatchEvent(new CustomEvent('split-resize'));
 }

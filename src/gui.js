@@ -138,6 +138,30 @@ export function initGUI(config, onChange, callbacks = {}) {
   tcGrid.addBinding(config.titlecard, 'gridOpacity', { min: 0, max: 1, label: 'opacity' });
   tcGrid.addBinding(config.titlecard, 'bgTransparent', { label: 'transparent bg' });
 
+  // Image cards
+  const tcImg = tcPage.addFolder({ title: 'Image Cards', expanded: true });
+  tcImg.addButton({ title: 'Load Images' }).on('click', () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.multiple = true;
+    input.onchange = () => {
+      if (input.files && input.files.length && callbacks.onTitlecardImagesLoad) {
+        callbacks.onTitlecardImagesLoad(input.files);
+      }
+    };
+    input.click();
+  });
+  tcImg.addButton({ title: 'Clear Images' }).on('click', () => {
+    if (callbacks.onTitlecardImagesClear) callbacks.onTitlecardImagesClear();
+  });
+  tcImg.addBinding(config.titlecard.imageCards, 'enabled');
+  tcImg.addBinding(config.titlecard.imageCards, 'count', { min: 1, max: 64, step: 1 });
+  tcImg.addBinding(config.titlecard.imageCards, 'seed', { min: 1, max: 9999, step: 1 });
+  tcImg.addBinding(config.titlecard.imageCards, 'threshold', { label: 'B&W threshold' });
+  tcImg.addBinding(config.titlecard.imageCards, 'thresholdLevel', { min: 0, max: 1, label: 'level' });
+  tcImg.addBinding(config.titlecard.imageCards, 'blackToAlpha', { label: 'black → alpha' });
+
   for (let i = 0; i < config.titlecard.texts.length; i++) {
     const folder = tcPage.addFolder({ title: `Text ${i + 1}`, expanded: i < 2 });
     const tc = config.titlecard.texts[i];

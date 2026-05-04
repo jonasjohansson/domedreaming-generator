@@ -36,6 +36,14 @@ export const defaultConfig = {
     gridOpacity: 1,
     bgTransparent: false,
     exportSize: 2048,
+    imageCards: {
+      enabled: true,
+      count: 8,
+      seed: 1,
+      threshold: false,
+      thresholdLevel: 0.5,
+      blackToAlpha: false,
+    },
     texts: [
       { content: 'DOME DREAMING', ring: 4, sector: 12, fontSize: 100, font: 'OffBit', cellMode: true, charsPerCell: 1, flipX: false, flipY: false },
       { content: 'FULLDOME FILM FESTIVAL', ring: 5, sector: 7, fontSize: 100, font: 'OffBit', cellMode: true, charsPerCell: 1, flipX: false, flipY: false },

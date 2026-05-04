@@ -3,6 +3,7 @@ import { initViewport3D, updateDome, setMediaTexture, setCustomMesh } from './vi
 import { initViewport2D, render2D, setMedia, setUnfold } from './viewport-2d.js';
 import { initViewportPolar, setPolarMedia, setPolarConfig, renderPolar } from './viewport-polar.js';
 import { initViewportTitlecard, setTitlecardConfig, renderTitlecard } from './viewport-titlecard.js';
+import { loadImageFiles as loadTitlecardImages, clearImages as clearTitlecardImages, setOnChange as setTitlecardImagesOnChange } from './titlecard-images.js';
 import { generateGeodesic } from './geodesic.js';
 import { unwrapMesh } from './unwrap.js';
 import { initGUI } from './gui.js';
@@ -104,7 +105,12 @@ initGUI(config, onChange, {
   onExportPolarGridSVG: () => exportPolarGridSVG(config),
   onExportTitlecard: () => exportTitlecardPNG(config),
   onExportTitlecardSVG: () => exportTitlecardSVG(config),
+  onTitlecardImagesLoad: (files) => loadTitlecardImages(files),
+  onTitlecardImagesClear: () => clearTitlecardImages(),
 });
+
+// Re-render the title card whenever the image registry changes
+setTitlecardImagesOnChange(() => renderTitlecard());
 onChange();
 
 // Force-load all title-card fonts before re-rendering. Canvas falls back to
