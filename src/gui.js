@@ -140,7 +140,10 @@ export function initGUI(config, onChange, callbacks = {}) {
 
   // Image cards
   const tcImg = tcPage.addFolder({ title: 'Image Cards', expanded: true });
-  tcImg.addButton({ title: 'Load Images' }).on('click', () => {
+  tcImg.addButton({ title: 'Load Festival Images' }).on('click', () => {
+    if (callbacks.onTitlecardFestivalImagesLoad) callbacks.onTitlecardFestivalImagesLoad();
+  });
+  tcImg.addButton({ title: 'Load Images from disk' }).on('click', () => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
