@@ -18,6 +18,34 @@ import { loadModel } from './model-loader.js';
 import { setColorMode } from './colors.js';
 
 const config = loadConfig() || structuredClone(defaultConfig);
+
+// Always start with the bundled festival lineup as the batch source.
+// Overrides any stored value so new entries added to lineup-batch.json
+// show up on next reload without users needing to clear localStorage.
+try {
+  const res = await fetch('assets/lineup-batch.json');
+  if (res.ok) {
+    const text = await res.text();
+    JSON.parse(text); // validate
+    config.titlecard.batch.json = text;
+  }
+} catch (err) {
+  console.warn('Could not load lineup-batch.json:', err);
+}
+
+// Text 1 = title and Text 2 = artist (set by the batch dropdown). Text 3
+// is the persistent "DOME DREAMING" festival branding, Text 4-6 are unused.
+// Force-reset slots 3-6 from defaults on every load so leftover content
+// from earlier data-model versions (e.g. stale title in Text 3) is wiped
+// and the branding stays in sync with the festival defaults.
+if (config.titlecard && Array.isArray(config.titlecard.texts)) {
+  for (let i = 2; i < config.titlecard.texts.length; i++) {
+    const def = defaultConfig.titlecard.texts[i];
+    if (def && config.titlecard.texts[i]) {
+      Object.assign(config.titlecard.texts[i], structuredClone(def));
+    }
+  }
+}
 let currentMesh = null;
 let currentUnwrapData = null;
 let currentMediaElement = null;
@@ -135,6 +163,10 @@ initGUI(config, onChange, {
 // Re-render the title card whenever the image registry changes
 setTitlecardImagesOnChange(() => renderTitlecard());
 onChange();
+
+// Auto-load the bundled festival lineup images on startup. Renderer triggers
+// via setTitlecardImagesOnChange once images finish loading.
+loadTitlecardImageUrls(FESTIVAL_IMAGE_PATHS);
 
 // Force-load all title-card fonts before re-rendering. Canvas falls back to
 // monospace for any face that hasn't been loaded by the document, so we

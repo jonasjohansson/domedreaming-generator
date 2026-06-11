@@ -36,6 +36,9 @@ export const defaultConfig = {
     gridOpacity: 1,
     bgTransparent: false,
     exportSize: 2048,
+    flipX: true,
+    flipY: true,
+    invertText: true,
     imageCards: {
       enabled: true,
       count: 8,
@@ -48,12 +51,23 @@ export const defaultConfig = {
       json: '[\n  {"a":"AGNIESZKA","b":"POLSKA","t":"THE HAPPIEST THOUGHT"},\n  {"a":"ARI","b":"DYKIER","t":"DREAM"}\n]',
     },
     texts: [
-      { content: 'DOME DREAMING', ring: 4, sector: 12, fontSize: 100, font: 'OffBit', cellMode: true, charsPerCell: 1, flipX: true, flipY: true},
-      { content: 'FULLDOME FILM FESTIVAL', ring: 5, sector: 7, fontSize: 100, font: 'OffBit', cellMode: true, charsPerCell: 1, flipX: true, flipY: true},
-      { content: '', ring: 3, sector: 0, fontSize: 100, font: 'OffBit', cellMode: true, charsPerCell: 1, flipX: true, flipY: true},
-      { content: '', ring: 2, sector: 0, fontSize: 100, font: 'OffBit', cellMode: true, charsPerCell: 1, flipX: true, flipY: true},
-      { content: '', ring: 1, sector: 0, fontSize: 100, font: 'OffBit', cellMode: true, charsPerCell: 1, flipX: true, flipY: true},
-      { content: '', ring: 1, sector: 0, fontSize: 100, font: 'OffBit', cellMode: true, charsPerCell: 1, flipX: true, flipY: true},
+      // Text 1 ← entry title. Prominent slot — centered at bottom outer ring,
+      // larger font so the film title reads as the headline. Arc mode (not
+      // cell mode) so multi-word titles like "LOCAL DYSTOPIAS IN THE GLOBAL
+      // UTOPIA" pack tightly along the curve and read as one phrase.
+      { content: 'FULLDOME FILM FESTIVAL', ring: 5, sector: 18, fontSize: 120, font: 'OffBit', cellMode: false, charsPerCell: 1 },
+      // Text 2 ← entry artist. Centered at top outer ring. Arc mode keeps
+      // names like "JEREMY OURY" together as a single curved word instead
+      // of breaking them into separate cell-aligned letters.
+      { content: 'PATRICIA DETMERING', ring: 5, sector: 0, fontSize: 90, font: 'OffBit', cellMode: false, charsPerCell: 1 },
+      // Text 3-5 = persistent festival branding. Festival name spans the
+      // bottom outer ring; the two city/date lines flank it on ring 4
+      // (Malmö lower-right at sector 20, Stockholm upper-right at sector 4).
+      { content: 'DREAMING FILM FESTIVAL', ring: 5, sector: 18, fontSize: 70, font: 'OffBit', cellMode: true, charsPerCell: 1 },
+      { content: 'MALMÖ 12 MAY', ring: 4, sector: 20, fontSize: 60, font: 'OffBit', cellMode: true, charsPerCell: 1 },
+      { content: 'STOCKHOLM 7–9 MAY', ring: 4, sector: 4, fontSize: 55, font: 'OffBit', cellMode: true, charsPerCell: 1 },
+      // Text 6 is unused; reset from defaults on startup in main.js.
+      { content: '', ring: 1, sector: 0, fontSize: 100, font: 'OffBit', cellMode: true, charsPerCell: 1 },
     ],
   },
   export: {

@@ -18,6 +18,9 @@ export function drawTitlecardAt(ctx, cx, cy, radius, config) {
     bgTransparent = false,
     imageCards = {},
     texts = [],
+    flipX = true,
+    flipY = true,
+    invertText = true,
   } = config || {};
 
   const bw = getColorMode() === 'bw';
@@ -67,12 +70,17 @@ export function drawTitlecardAt(ctx, cx, cy, radius, config) {
   }
   ctx.restore();
 
-  // Text
+  // Text — when invertText is on, draw with white source + 'difference' op
+  // so the text inverts polarity against whatever it overlaps (B&W image
+  // cards, grid lines, background). Black image area → white text;
+  // white image area → black text.
   ctx.save();
   ctx.globalAlpha = 1;
+  const textColor = invertText ? '#ffffff' : fg;
+  if (invertText) ctx.globalCompositeOperation = 'difference';
   for (const t of texts) {
     if (!t || !t.content) continue;
-    drawTextOnRing(ctx, cx, cy, radius, rings, radialLines, t, fg);
+    drawTextOnRing(ctx, cx, cy, radius, rings, radialLines, t, textColor, flipX, flipY);
   }
   ctx.restore();
 }
@@ -214,34 +222,32 @@ function drawImageInCell(ctx, img, cx, cy, innerR, outerR, startAngle, endAngle,
   ctx.restore();
 }
 
-function drawTextOnRing(ctx, cx, cy, radius, rings, numSectors, t, color) {
+function drawTextOnRing(ctx, cx, cy, radius, rings, numSectors, t, color, flipX, flipY) {
   const {
     content,
     ring = 1,
-    sector: startSector = 0,
+    sector: anchorSector = 0,
     fontSize = 100,
     font = 'OffBit',
     cellMode = true,
     charsPerCell = 1,
-    flipX = false,
-    flipY = false,
   } = t;
 
   const ringStep = radius / rings;
   const r = Math.max(1, Math.min(rings, ring));
 
   if (cellMode) {
-    drawTextInCells(ctx, content, cx, cy, ringStep, r, startSector, numSectors, fontSize, color, flipX, flipY, charsPerCell, font);
+    drawTextInCells(ctx, content, cx, cy, ringStep, r, anchorSector, numSectors, fontSize, color, flipX, flipY, charsPerCell, font);
   } else {
     const arcRadius = ringStep * (r - 0.5);
-    const startAngle = (startSector / numSectors) * Math.PI * 2 - Math.PI / 2;
+    const anchorAngle = (anchorSector / numSectors) * Math.PI * 2 - Math.PI / 2;
     const cellSize = ringStep;
     const px = (cellSize * fontSize) / 100 * 0.7;
-    drawTextOnArc(ctx, content, cx, cy, arcRadius, startAngle, px, color, 0.08, flipX, flipY, font);
+    drawTextOnArc(ctx, content, cx, cy, arcRadius, anchorAngle, px, color, 0.08, flipX, flipY, font);
   }
 }
 
-function drawTextInCells(ctx, text, cx, cy, ringStep, row, startSector, numSectors, fontSizePercent, color, flipX, flipY, charsPerCell, font) {
+function drawTextInCells(ctx, text, cx, cy, ringStep, row, anchorSector, numSectors, fontSizePercent, color, flipX, flipY, charsPerCell, font) {
   const chars = text.split('');
   const cpc = Math.max(1, charsPerCell || 1);
 
@@ -262,6 +268,11 @@ function drawTextInCells(ctx, text, cx, cy, ringStep, row, startSector, numSecto
   ctx.fillStyle = color;
 
   const direction = flipX ? -1 : 1;
+  // anchorSector is the *center* sector of the text. Compute the start
+  // sector so the text extends symmetrically around it. With flipX the
+  // text walks counterclockwise, so the start lands on the opposite side.
+  const cellCount = Math.max(1, Math.ceil(chars.length / cpc));
+  const startSector = anchorSector - direction * (cellCount - 1) / 2;
 
   for (let i = 0; i < chars.length; i++) {
     const ch = chars[i];
@@ -269,7 +280,8 @@ function drawTextInCells(ctx, text, cx, cy, ringStep, row, startSector, numSecto
 
     const cellIndex = Math.floor(i / cpc);
     const posInCell = i % cpc;
-    const sectorIndex = ((startSector + cellIndex * direction) % numSectors + numSectors) % numSectors;
+    const rawSector = startSector + cellIndex * direction;
+    const sectorIndex = ((Math.round(rawSector) % numSectors) + numSectors) % numSectors;
     const subOffset = (posInCell + 0.5) * charAngle - sectorAngle / 2;
     const angle = sectorIndex * sectorAngle - Math.PI / 2 + sectorAngle / 2 + subOffset * direction;
 

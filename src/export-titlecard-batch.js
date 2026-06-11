@@ -1,8 +1,8 @@
 /**
- * Batch title-card export — given a list of {a, b, t} entries (matching
- * the format used by /grid/ on domedreaming.com), render one PNG per
- * entry with a/b/t injected into Text 1/2/3 and the image-card seed
- * incremented per entry, then bundle everything into a single ZIP.
+ * Batch title-card export — given a list of {artist, title} entries,
+ * render one PNG per entry with title → Text 1 (the prominent headline
+ * slot) and artist → Text 2, incrementing the image-card seed per entry
+ * so every card gets a different image layout. Bundles into a ZIP.
  */
 
 import JSZip from 'jszip';
@@ -22,16 +22,16 @@ export async function exportTitlecardBatchZip(config, entries) {
 
   for (let i = 0; i < entries.length; i++) {
     const e = entries[i] || {};
-    const a = (e.a || '').toString();
-    const b = (e.b || '').toString();
-    const t = (e.t || '').toString();
+    const artist = (e.artist || '').toString();
+    const title = (e.title || '').toString();
 
     // Build a per-entry config without mutating the live one
     const perCardCfg = JSON.parse(JSON.stringify(tc));
-    if (perCardCfg.texts && perCardCfg.texts.length >= 3) {
-      perCardCfg.texts[0].content = a;
-      perCardCfg.texts[1].content = b;
-      perCardCfg.texts[2].content = t;
+    if (perCardCfg.texts && perCardCfg.texts.length >= 2) {
+      perCardCfg.texts[0].content = title;
+      perCardCfg.texts[1].content = artist;
+      // Text 3 (festival branding) and any other custom slots are kept as-is
+      // so they appear identically on every batch card.
     }
     if (perCardCfg.imageCards) {
       perCardCfg.imageCards.seed = baseSeed + i;
@@ -46,7 +46,7 @@ export async function exportTitlecardBatchZip(config, entries) {
 
     const blob = await new Promise((r) => canvas.toBlob(r, 'image/png'));
     if (!blob) continue;
-    const filename = `${pad(i + 1, entries.length)}-${slug(a)}-${slug(t)}.png`.replace(/-+/g, '-');
+    const filename = `${pad(i + 1, entries.length)}-${slug(artist)}-${slug(title)}.png`.replace(/-+/g, '-');
     zip.file(filename, blob);
   }
 

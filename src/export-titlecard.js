@@ -58,6 +58,9 @@ export async function exportTitlecardSVG(config) {
     gridOpacity = 1,
     bgTransparent = true,
     texts = [],
+    flipX = true,
+    flipY = true,
+    invertText = true,
   } = tc || {};
 
   const bw = getColorMode() === 'bw';
@@ -108,10 +111,17 @@ export async function exportTitlecardSVG(config) {
   }
   lines.push(`</g>`);
 
-  // Text
-  for (const t of texts) {
-    if (!t || !t.content) continue;
-    appendTextSVG(lines, t, cx, cy, size / 2, rings, radialLines, fg);
+  // Text — when inverting, use white source + mix-blend-mode:difference
+  // so the text flips polarity against image cards (matches canvas renderer)
+  const textColor = invertText ? '#ffffff' : fg;
+  const textGroupAttr = invertText ? ' style="mix-blend-mode:difference"' : '';
+  if (texts.some((t) => t && t.content)) {
+    lines.push(`<g${textGroupAttr}>`);
+    for (const t of texts) {
+      if (!t || !t.content) continue;
+      appendTextSVG(lines, t, cx, cy, size / 2, rings, radialLines, textColor, flipX, flipY);
+    }
+    lines.push(`</g>`);
   }
 
   lines.push(`</svg>`);
@@ -125,17 +135,15 @@ export async function exportTitlecardSVG(config) {
   URL.revokeObjectURL(url);
 }
 
-function appendTextSVG(lines, t, cx, cy, radius, rings, numSectors, color) {
+function appendTextSVG(lines, t, cx, cy, radius, rings, numSectors, color, flipX, flipY) {
   const {
     content,
     ring = 1,
-    sector: startSector = 0,
+    sector: anchorSector = 0,
     fontSize = 100,
     font = 'OffBit',
     cellMode = true,
     charsPerCell = 1,
-    flipX = false,
-    flipY = false,
   } = t;
 
   const ringStep = radius / rings;
@@ -155,22 +163,26 @@ function appendTextSVG(lines, t, cx, cy, radius, rings, numSectors, color) {
   const chars = content.split('');
 
   if (cellMode) {
+    // anchorSector is the *center* of the text — extend symmetrically.
+    const cellCount = Math.max(1, Math.ceil(chars.length / cpc));
+    const startSector = anchorSector - direction * (cellCount - 1) / 2;
     for (let i = 0; i < chars.length; i++) {
       const ch = chars[i];
       if (ch === ' ') continue;
       const cellIndex = Math.floor(i / cpc);
       const posInCell = i % cpc;
-      const sectorIndex = ((startSector + cellIndex * direction) % numSectors + numSectors) % numSectors;
+      const rawSector = startSector + cellIndex * direction;
+      const sectorIndex = ((Math.round(rawSector) % numSectors) + numSectors) % numSectors;
       const subOffset = (posInCell + 0.5) * charAngle - sectorAngle / 2;
       const angle = sectorIndex * sectorAngle - Math.PI / 2 + sectorAngle / 2 + subOffset * direction;
       emitChar(lines, ch, cx, cy, midRadius, angle, px, font, color, flipY);
     }
   } else {
     const arcRadius = midRadius;
-    const startAngle = (startSector / numSectors) * Math.PI * 2 - Math.PI / 2;
+    const anchorAngle = (anchorSector / numSectors) * Math.PI * 2 - Math.PI / 2;
     const letterSpacing = 0.08;
     const totalAngle = chars.length * letterSpacing;
-    let angle = startAngle - (totalAngle / 2) * direction;
+    let angle = anchorAngle - (totalAngle / 2) * direction;
     for (const ch of chars) {
       emitChar(lines, ch, cx, cy, arcRadius, angle, px, font, color, flipY);
       angle += letterSpacing * direction;
